@@ -17,7 +17,7 @@ func TestOperator_GetNextCandidate(t *testing.T) {
 	pool.add("A", "B", "C")
 
 	ibft := &Ibft{
-		validatorKeyAddr: pool.get("A").Address(),
+		validatorKey: newKey(pool.get("A").priv),
 	}
 
 	snap := &Snapshot{

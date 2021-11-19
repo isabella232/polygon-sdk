@@ -1,18 +1,6 @@
 package ibft
 
-import (
-	"testing"
-
-	"github.com/0xPolygon/polygon-sdk/blockchain"
-	"github.com/0xPolygon/polygon-sdk/consensus"
-	"github.com/0xPolygon/polygon-sdk/consensus/ibft/proto"
-	"github.com/0xPolygon/polygon-sdk/helper/hex"
-	"github.com/0xPolygon/polygon-sdk/types"
-	"github.com/hashicorp/go-hclog"
-	"github.com/stretchr/testify/assert"
-	any "google.golang.org/protobuf/types/known/anypb"
-)
-
+/*
 func TestTransition_ValidateState_Prepare(t *testing.T) {
 	t.Skip()
 
@@ -611,3 +599,4 @@ func (m *mockIbft) expect(res expectResult) {
 		m.t.Fatalf("incorrect error %v %v", m.state.err, res.err)
 	}
 }
+*/

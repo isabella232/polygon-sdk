@@ -3,17 +3,18 @@ package ibft
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/hex"
 	"fmt"
-	"math"
 	"path/filepath"
-	"reflect"
 	"time"
+
+	"github.com/0xPolygon/pbft-consensus"
+	"github.com/golang/protobuf/ptypes/any"
 
 	"github.com/0xPolygon/polygon-sdk/blockchain"
 	"github.com/0xPolygon/polygon-sdk/consensus"
 	"github.com/0xPolygon/polygon-sdk/consensus/ibft/proto"
 	"github.com/0xPolygon/polygon-sdk/crypto"
-	"github.com/0xPolygon/polygon-sdk/helper/hex"
 	"github.com/0xPolygon/polygon-sdk/network"
 	"github.com/0xPolygon/polygon-sdk/protocol"
 	"github.com/0xPolygon/polygon-sdk/state"
@@ -21,7 +22,6 @@ import (
 	"github.com/0xPolygon/polygon-sdk/types"
 	"github.com/hashicorp/go-hclog"
 	"google.golang.org/grpc"
-	any "google.golang.org/protobuf/types/known/anypb"
 )
 
 const (
@@ -41,22 +41,24 @@ type Ibft struct {
 
 	logger hclog.Logger      // Output logger
 	config *consensus.Config // Consensus configuration
-	state  *currentState     // Reference to the current state
+	//state  *currentState     // Reference to the current state
 
 	blockchain blockchainInterface // Interface exposed by the blockchain layer
 	executor   *state.Executor     // Reference to the state executor
 	closeCh    chan struct{}       // Channel for closing
 
-	validatorKey     *ecdsa.PrivateKey // Private key for the validator
-	validatorKeyAddr types.Address
+	//validatorKey     *ecdsa.PrivateKey // Private key for the validator
+	//validatorKeyAddr types.Address
+
+	validatorKey *key
 
 	txpool *txpool.TxPool // Reference to the transaction pool
 
 	store     *snapshotStore // Snapshot store that keeps track of all snapshots
 	epochSize uint64
 
-	msgQueue *msgQueue     // Structure containing different message queues
-	updateCh chan struct{} // Update channel
+	//msgQueue *msgQueue     // Structure containing different message queues
+	//updateCh chan struct{} // Update channel
 
 	syncer       *protocol.Syncer // Reference to the sync protocol
 	syncNotifyCh chan bool        // Sync protocol notification channel
@@ -66,8 +68,40 @@ type Ibft struct {
 
 	operator *operator
 
+	pbft *pbft.Pbft
+
 	// aux test methods
-	forceTimeoutCh bool
+	// forceTimeoutCh bool
+}
+
+type key struct {
+	priv *ecdsa.PrivateKey
+	addr types.Address
+}
+
+func (k *key) String() string {
+	return k.addr.String()
+}
+
+func (k *key) NodeID() pbft.NodeID {
+	return pbft.NodeID(k.addr.String())
+}
+
+func (k *key) Sign(b []byte) ([]byte, error) {
+	// TODO
+	seal, err := crypto.Sign(k.priv, crypto.Keccak256(b))
+	if err != nil {
+		return nil, err
+	}
+	return seal, nil
+}
+
+func newKey(priv *ecdsa.PrivateKey) *key {
+	k := &key{
+		priv: priv,
+		addr: crypto.PubKeyToAddress(&priv.PublicKey),
+	}
+	return k
 }
 
 // Factory implements the base consensus Factory method
@@ -83,13 +117,13 @@ func Factory(
 	logger hclog.Logger,
 ) (consensus.Consensus, error) {
 	p := &Ibft{
-		logger:       logger.Named("ibft"),
-		config:       config,
-		blockchain:   blockchain,
-		executor:     executor,
-		closeCh:      make(chan struct{}),
-		txpool:       txpool,
-		state:        &currentState{},
+		logger:     logger.Named("ibft"),
+		config:     config,
+		blockchain: blockchain,
+		executor:   executor,
+		closeCh:    make(chan struct{}),
+		txpool:     txpool,
+		// state:        &currentState{},
 		network:      network,
 		epochSize:    DefaultEpochSize,
 		syncNotifyCh: make(chan bool),
@@ -109,7 +143,13 @@ func Factory(
 		return nil, err
 	}
 
-	p.logger.Info("validator key", "addr", p.validatorKeyAddr.String())
+	p.logger.Info("validator key", "addr", p.validatorKey.NodeID())
+
+	p.pbft = pbft.New(
+		p.validatorKey,
+		&pbftTransport{p},
+		pbft.WithLogger(p.logger.StandardLogger(&hclog.StandardLoggerOptions{})),
+	)
 
 	// start the transport protocol
 	if err := p.setupTransport(); err != nil {
@@ -117,6 +157,21 @@ func Factory(
 	}
 
 	return p, nil
+}
+
+type pbftTransport struct {
+	i *Ibft
+}
+
+func (p *pbftTransport) Gossip(msg *pbft.MessageReq) error {
+	protoMsg, err := pbftMsgToProto(msg)
+	if err != nil {
+		panic(err)
+	}
+	if err := p.i.transport.Gossip(protoMsg); err != nil {
+		panic(err)
+	}
+	return nil
 }
 
 // Start starts the IBFT consensus
@@ -151,6 +206,70 @@ func (g *gossipTransport) Gossip(msg *proto.MessageReq) error {
 	return g.topic.Publish(msg)
 }
 
+// message encoding
+
+func protoMsgToPbft(msg *proto.MessageReq) (*pbft.MessageReq, error) {
+	var typ pbft.MsgType
+	switch msg.Type {
+	case proto.MessageReq_Commit:
+		typ = pbft.MessageReq_Commit
+	case proto.MessageReq_Prepare:
+		typ = pbft.MessageReq_Prepare
+	case proto.MessageReq_Preprepare:
+		typ = pbft.MessageReq_Preprepare
+	case proto.MessageReq_RoundChange:
+		typ = pbft.MessageReq_RoundChange
+	default:
+		panic("bad")
+	}
+
+	seal, err := hex.DecodeString(msg.Seal)
+	if err != nil {
+		return nil, err
+	}
+	realMsg := &pbft.MessageReq{
+		Type: typ,
+		From: pbft.NodeID(msg.From),
+		Seal: seal,
+		View: &pbft.View{
+			Sequence: msg.View.Sequence,
+			Round:    msg.View.Round,
+		},
+		Proposal: msg.Proposal.Value,
+	}
+	return realMsg, nil
+}
+
+func pbftMsgToProto(msg *pbft.MessageReq) (*proto.MessageReq, error) {
+	var typ proto.MessageReq_Type
+	switch msg.Type {
+	case pbft.MessageReq_Commit:
+		typ = proto.MessageReq_Commit
+	case pbft.MessageReq_Prepare:
+		typ = proto.MessageReq_Prepare
+	case pbft.MessageReq_Preprepare:
+		typ = proto.MessageReq_Preprepare
+	case pbft.MessageReq_RoundChange:
+		typ = proto.MessageReq_RoundChange
+	default:
+		panic("bad")
+	}
+
+	realMsg := &proto.MessageReq{
+		Type: typ,
+		From: string(msg.From),
+		Seal: hex.EncodeToString(msg.Seal),
+		View: &proto.View{
+			Sequence: msg.View.Sequence,
+			Round:    msg.View.Round,
+		},
+		Proposal: &any.Any{
+			Value: msg.Proposal,
+		},
+	}
+	return realMsg, nil
+}
+
 // setupTransport sets up the gossip transport protocol
 func (i *Ibft) setupTransport() error {
 	// Define a new topic
@@ -169,20 +288,30 @@ func (i *Ibft) setupTransport() error {
 			return
 		}
 
-		// decode sender
-		if err := validateMsg(msg); err != nil {
-			i.logger.Error("failed to validate msg", "err", err)
+		/*
+			// decode sender
+			if err := validateMsg(msg); err != nil {
+				i.logger.Error("failed to validate msg", "err", err)
 
-			return
-		}
+				return
+			}
+		*/
 
-		if msg.From == i.validatorKeyAddr.String() {
+		if msg.From == string(i.validatorKey.NodeID()) {
 			// we are the sender, skip this message since we already
 			// relay our own messages internally.
 			return
 		}
 
-		i.pushMessage(msg)
+		i.logger.Info("message", "from", msg.From, "typ", msg.Type.String())
+
+		pbftMsg, err := protoMsgToPbft(msg)
+		if err != nil {
+			panic(err)
+		}
+		i.pbft.PushMessage(pbftMsg)
+
+		// i.pushMessage(msg)
 	})
 
 	if err != nil {
@@ -197,9 +326,9 @@ func (i *Ibft) setupTransport() error {
 // createKey sets the validator's private key, from the file path
 func (i *Ibft) createKey() error {
 	// i.msgQueue = msgQueueImpl{}
-	i.msgQueue = newMsgQueue()
+	//i.msgQueue = newMsgQueue()
 	i.closeCh = make(chan struct{})
-	i.updateCh = make(chan struct{})
+	//i.updateCh = make(chan struct{})
 
 	if i.validatorKey == nil {
 		// generate a validator private key
@@ -208,8 +337,9 @@ func (i *Ibft) createKey() error {
 			return err
 		}
 
-		i.validatorKey = validatorKey
-		i.validatorKeyAddr = crypto.PubKeyToAddress(&validatorKey.PublicKey)
+		i.validatorKey = newKey(validatorKey)
+		//i.validatorKey = validatorKey
+		//i.validatorKeyAddr = crypto.PubKeyToAddress(&validatorKey.PublicKey)
 	}
 
 	return nil
@@ -217,28 +347,218 @@ func (i *Ibft) createKey() error {
 
 const IbftKeyName = "validator.key"
 
+type fsm struct {
+	parent *types.Header
+
+	// last proposer
+	lastProposer types.Address
+
+	// reference to the current state for validators
+	snap *Snapshot
+
+	i *Ibft
+}
+
+func (f *fsm) BuildProposal() (*pbft.Proposal, error) {
+	block, err := f.i.buildBlock(f.snap, f.parent)
+	if err != nil {
+		panic(err)
+	}
+
+	data := block.MarshalRLP()
+	proposal := &pbft.Proposal{
+		Time: time.Unix(int64(block.Header.Timestamp), 0),
+		Data: data,
+	}
+	return proposal, nil
+}
+
+// Validate validates a raw proposal (used if non-proposer)
+func (f *fsm) Validate(proposal []byte) error {
+	// it is good right now
+	return nil
+}
+
+// Insert inserts the sealed proposal
+func (f *fsm) Insert(p *pbft.SealedProposal) error {
+
+	//fmt.Println("-- proposal --")
+	//fmt.Println(p)
+	//fmt.Println(p.Proposal)
+	//fmt.Println(p.CommittedSeals)
+
+	block := &types.Block{}
+	if err := block.UnmarshalRLP(p.Proposal); err != nil {
+		panic(err)
+	}
+	if err := f.i.insertBlock(block, p.CommittedSeals); err != nil {
+		panic(err)
+	}
+	return nil
+}
+
+// Height returns the height for the current round
+func (f *fsm) Height() uint64 {
+	return f.parent.Number + 1
+}
+
+type dummySet struct {
+	lastProposer types.Address
+	set          ValidatorSet
+}
+
+func (d *dummySet) CalcProposer(round uint64) pbft.NodeID {
+	proposer := d.set.CalcProposer(round, d.lastProposer)
+
+	fmt.Println("-- proposer --")
+	fmt.Println(d.set)
+	fmt.Println(d.lastProposer)
+	fmt.Println(round)
+	fmt.Println(proposer)
+
+	return pbft.NodeID(proposer.String())
+}
+
+func (d *dummySet) Includes(id pbft.NodeID) bool {
+	for _, i := range d.set {
+		if i.String() == string(id) {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *dummySet) Len() int {
+	return d.set.Len()
+}
+
+// ValidatorSet returns the validator set for the current round
+func (f *fsm) ValidatorSet() pbft.ValidatorSet {
+
+	fmt.Println("-- validator set --")
+	fmt.Println(f.snap.Set)
+
+	dd := &dummySet{set: f.snap.Set, lastProposer: f.lastProposer}
+	return dd
+}
+
+// Hash hashes the proposal bytes
+func (f *fsm) Hash(p []byte) []byte {
+
+	// here you return the data that nodes are going to seal for the committed seal
+	// in our case, we are going to hash the header (without some fields) and then
+	// prefixed with the commit msg
+
+	block := &types.Block{}
+	if err := block.UnmarshalRLP(p); err != nil {
+		panic(err)
+	}
+	hash, err := calculateHeaderHash(block.Header)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("-- hash --")
+	fmt.Println(block.Header)
+	fmt.Println(hash)
+
+	msg := commitMsg(hash)
+
+	fmt.Println("-- msg --")
+	fmt.Println(msg)
+
+	/*
+		panic("xxx")
+
+		h := sha1.New()
+		h.Write(p)
+		return h.Sum(nil)
+	*/
+
+	return msg
+}
+
+// IsStuck returns whether the pbft is stucked
+func (f *fsm) IsStuck(num uint64) (uint64, bool) {
+	if f.i.syncer == nil {
+		// we cannot answer it. skip it
+		return 0, false
+	}
+
+	bestPeer := f.i.syncer.BestPeer()
+	if bestPeer == nil {
+		// there is no best peer, skip it
+		return 0, false
+	}
+
+	lastProposal := f.i.blockchain.Header() // isnt this parent??
+	if bestPeer.Number() > lastProposal.Number {
+		// we are stuck
+		return bestPeer.Number(), true
+	}
+	return 0, false
+}
+
+func (f *fsm) init() error {
+	snap, err := f.i.getSnapshot(f.parent.Number)
+	if err != nil {
+		panic(err)
+	}
+	f.snap = snap
+
+	var lastProposer types.Address
+	if f.parent.Number != 0 {
+		lastProposer, err = ecrecoverFromHeader(f.parent)
+		if err != nil {
+			return err
+		}
+	}
+	f.lastProposer = lastProposer
+	return nil
+}
+
 // start starts the IBFT consensus state machine
 func (i *Ibft) start() {
-	// consensus always starts in SyncState mode in case it needs
-	// to sync with other nodes.
-	i.setState(SyncState)
 
-	// Grab the latest header
-	header := i.blockchain.Header()
-	i.logger.Debug("current sequence", "sequence", header.Number+1)
+SYNC:
+	// try to sync as much as possible
+	i.runSyncState()
 
 	for {
-		select {
-		case <-i.closeCh:
-			return
-		default: // Default is here because we would block until we receive something in the closeCh
+
+		// build the reference for this block
+		fsm := &fsm{
+			i:      i,
+			parent: i.blockchain.Header(),
+		}
+		// initialize the wrapper
+		if err := fsm.init(); err != nil {
+			panic(err)
+		}
+		if err := i.pbft.SetBackend(fsm); err != nil {
+			panic(err)
 		}
 
-		// Start the state machine loop
-		i.runCycle()
+		// start the pbft sequence
+		i.pbft.Run(context.Background())
+
+		switch i.pbft.GetState() {
+		case pbft.SyncState:
+			// we need to go back to sync
+			goto SYNC
+		case pbft.DoneState:
+			// everything worked, move to the next iteration
+		default:
+			// stopped
+			return
+		}
+
+		// ...
+		// if end of epoch...
 	}
 }
 
+/*
 // runCycle represents the IBFT state machine loop
 func (i *Ibft) runCycle() {
 	// Log to the console
@@ -261,7 +581,9 @@ func (i *Ibft) runCycle() {
 		i.runSyncState()
 	}
 }
+*/
 
+/*
 // isValidSnapshot checks if the current node is in the validator set for the latest snapshot
 func (i *Ibft) isValidSnapshot() bool {
 	if !i.isSealing() {
@@ -275,36 +597,61 @@ func (i *Ibft) isValidSnapshot() bool {
 		return false
 	}
 
-	if snap.Set.Includes(i.validatorKeyAddr) {
+	if snap.Set.Includes() {
+		// Do not need to do this since it will be done later
 		i.state.view = &proto.View{
 			Sequence: header.Number + 1,
 			Round:    0,
 		}
-
 		return true
 	}
 	return false
 }
+*/
 
 // runSyncState implements the Sync state loop.
 //
 // It fetches fresh data from the blockchain. Checks if the current node is a validator and resolves any pending blocks
 func (i *Ibft) runSyncState() {
-	for i.isState(SyncState) {
+	isSyncing := true
+
+	isValidSnapshot := func() bool {
+		if !i.isSealing() {
+			return false
+		}
+
+		// check if we are a validator and enabled
+		header := i.blockchain.Header()
+		snap, err := i.getSnapshot(header.Number)
+		if err != nil {
+			return false
+		}
+
+		if snap.Set.Includes(i.validatorKey.addr) {
+			// Do not need to do this since it will be done later
+			return true
+		}
+		return false
+	}
+
+	for isSyncing {
 		// try to sync with some target peer
 		p := i.syncer.BestPeer()
 		if p == nil {
 			// if we do not have any peers and we have been a validator
 			// we can start now. In case we start on another fork this will be
 			// reverted later
-			if i.isValidSnapshot() {
+			if isValidSnapshot() {
 				// initialize the round and sequence
-				header := i.blockchain.Header()
-				i.state.view = &proto.View{
-					Round:    0,
-					Sequence: header.Number + 1,
-				}
-				i.setState(AcceptState)
+				// header := i.blockchain.Header()
+				isSyncing = false
+				/*
+					i.state.view = &proto.View{
+						Round:    0,
+						Sequence: header.Number + 1,
+					}
+					i.setState(AcceptState)
+				*/
 			} else {
 				time.Sleep(1 * time.Second)
 			}
@@ -318,16 +665,18 @@ func (i *Ibft) runSyncState() {
 
 		// if we are a validator we do not even want to wait here
 		// we can just move ahead
-		if i.isValidSnapshot() {
-			i.setState(AcceptState)
+		if isValidSnapshot() {
+			isSyncing = false
 			continue
+			//i.setState(AcceptState)
+			//continue
 		}
 
 		// start watch mode
 		var isValidator bool
 		i.syncer.WatchSyncWithPeer(p, func(b *types.Block) bool {
 			i.syncer.Broadcast(b)
-			isValidator = i.isValidSnapshot()
+			isValidator = isValidSnapshot()
 
 			return isValidator
 		})
@@ -336,7 +685,8 @@ func (i *Ibft) runSyncState() {
 			// at this point, we are in sync with the latest chain we know of
 			// and we are a validator of that chain so we need to change to AcceptState
 			// so that we can start to do some stuff there
-			i.setState(AcceptState)
+			// i.setState(AcceptState)
+			isSyncing = false
 		}
 	}
 }
@@ -356,6 +706,11 @@ func (i *Ibft) buildBlock(snap *Snapshot, parent *types.Header) (*types.Block, e
 		Sha3Uncles: types.EmptyUncleHash,
 		GasLimit:   parent.GasLimit, // Inherit from parent for now, will need to adjust dynamically later.
 	}
+
+	//fmt.Println("--")
+	//fmt.Println(i)
+	//fmt.Println(i.blockchain)
+	//fmt.Println(header)
 
 	// calculate gas limit based on parent header
 	gasLimit, err := i.blockchain.CalculateGasLimit(header.Number)
@@ -386,7 +741,7 @@ func (i *Ibft) buildBlock(snap *Snapshot, parent *types.Header) (*types.Block, e
 	// we need to include in the extra field the current set of validators
 	putIbftExtraValidators(header, snap.Set)
 
-	transition, err := i.executor.BeginTxn(parent.StateRoot, header, i.validatorKeyAddr)
+	transition, err := i.executor.BeginTxn(parent.StateRoot, header, types.Address{})
 	if err != nil {
 		return nil, err
 	}
@@ -426,7 +781,7 @@ func (i *Ibft) buildBlock(snap *Snapshot, parent *types.Header) (*types.Block, e
 	})
 
 	// write the seal of the block after all the fields are completed
-	header, err = writeSeal(i.validatorKey, block.Header)
+	header, err = writeSeal(i.validatorKey.priv, block.Header)
 	if err != nil {
 		return nil, err
 	}
@@ -440,6 +795,7 @@ func (i *Ibft) buildBlock(snap *Snapshot, parent *types.Header) (*types.Block, e
 	return block, nil
 }
 
+/*
 // runAcceptState runs the Accept state loop
 //
 // The Accept state always checks the snapshot, and the validator set. If the current node is not in the validators set,
@@ -642,13 +998,16 @@ func (i *Ibft) runValidateState() {
 		}
 	}
 }
+*/
 
-func (i *Ibft) insertBlock(block *types.Block) error {
-	committedSeals := [][]byte{}
-	for _, commit := range i.state.committed {
-		// no need to check the format of seal here because writeCommittedSeals will check
-		committedSeals = append(committedSeals, hex.MustDecodeHex(commit.Seal))
-	}
+func (i *Ibft) insertBlock(block *types.Block, committedSeals [][]byte) error {
+	/*
+		committedSeals := [][]byte{}
+		for _, commit := range i.state.committed {
+			// no need to check the format of seal here because writeCommittedSeals will check
+			committedSeals = append(committedSeals, hex.MustDecodeHex(commit.Seal))
+		}
+	*/
 
 	header, err := writeCommittedSeals(block.Header, committedSeals)
 	if err != nil {
@@ -665,18 +1024,20 @@ func (i *Ibft) insertBlock(block *types.Block) error {
 
 	i.logger.Info(
 		"block committed",
-		"sequence", i.state.view.Sequence,
+		//"sequence", i.state.view.Sequence,
 		"hash", block.Hash(),
-		"validators", len(i.state.validators),
-		"rounds", i.state.view.Round+1,
-		"committed", i.state.numCommitted(),
+		//"validators", len(i.state.validators),
+		//"rounds", i.state.view.Round+1,
+		//"committed", i.state.numCommitted(),
 	)
 
-	// increase the sequence number and reset the round if any
-	i.state.view = &proto.View{
-		Sequence: header.Number + 1,
-		Round:    0,
-	}
+	/*
+		// increase the sequence number and reset the round if any
+		i.state.view = &proto.View{
+			Sequence: header.Number + 1,
+			Round:    0,
+		}
+	*/
 
 	// broadcast the new block
 	i.syncer.Broadcast(block)
@@ -688,6 +1049,7 @@ func (i *Ibft) insertBlock(block *types.Block) error {
 	return nil
 }
 
+/*
 var (
 	errIncorrectBlockLocked    = fmt.Errorf("block locked is incorrect")
 	errBlockVerificationFailed = fmt.Errorf("block verification failed")
@@ -783,9 +1145,11 @@ func (i *Ibft) runRoundChangeState() {
 		}
 	}
 }
+*/
 
 // --- com wrappers ---
 
+/*
 func (i *Ibft) sendRoundChange() {
 	i.gossip(proto.MessageReq_RoundChange)
 }
@@ -872,6 +1236,7 @@ func (i *Ibft) randomTimeout() time.Duration {
 	}
 	return timeout
 }
+*/
 
 // isSealing checks if the current node is sealing blocks
 func (i *Ibft) isSealing() bool {
@@ -957,6 +1322,7 @@ func (i *Ibft) Close() error {
 	return nil
 }
 
+/*
 // getNextMessage reads a new message from the message queue
 func (i *Ibft) getNextMessage(timeout time.Duration) (*proto.MessageReq, bool) {
 	timeoutCh := time.After(timeout)
@@ -997,3 +1363,4 @@ func (i *Ibft) pushMessage(msg *proto.MessageReq) {
 	default:
 	}
 }
+*/
