@@ -182,7 +182,15 @@ func verifyCommitedFields(snap *Snapshot, header *types.Header) error {
 	if err != nil {
 		return err
 	}
+
+	//fmt.Println("-- hash --")
+	//fmt.Println(header)
+	//fmt.Println(hash)
+
 	rawMsg := commitMsg(hash)
+
+	//fmt.Println("-- raw validate msg --")
+	//fmt.Println(rawMsg)
 
 	visited := map[types.Address]struct{}{}
 	for _, seal := range extra.CommittedSeal {
@@ -195,7 +203,7 @@ func verifyCommitedFields(snap *Snapshot, header *types.Header) error {
 			return fmt.Errorf("repeated seal")
 		} else {
 			if !snap.Set.Includes(addr) {
-				return fmt.Errorf("signed by non validator")
+				return fmt.Errorf("signed by non validator: %s", addr.String())
 			}
 			visited[addr] = struct{}{}
 		}

@@ -3,6 +3,7 @@ module github.com/0xPolygon/polygon-sdk
 go 1.14
 
 require (
+	github.com/0xPolygon/pbft-consensus v0.0.0-20211117113442-6cb2c0968df0
 	github.com/btcsuite/btcd v0.21.0-beta
 	github.com/golang/protobuf v1.4.3
 	github.com/google/gopacket v1.1.18 // indirect
@@ -35,3 +36,5 @@ require (
 	google.golang.org/protobuf v1.25.0
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce
 )
+
+replace github.com/0xPolygon/pbft-consensus => ../../0xPolygon/pbft-consensus
