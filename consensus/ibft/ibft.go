@@ -10,10 +10,17 @@ import (
 
 	"github.com/0xPolygon/pbft-consensus"
 	"github.com/golang/protobuf/ptypes/any"
+	"github.com/umbracle/go-web3"
+	"github.com/umbracle/go-web3/jsonrpc"
+	"github.com/umbracle/go-web3/tracker"
+
+	boltdbStore "github.com/umbracle/go-web3/tracker/store/boltdb"
 
 	"github.com/0xPolygon/polygon-sdk/blockchain"
 	"github.com/0xPolygon/polygon-sdk/consensus"
+	pool "github.com/0xPolygon/polygon-sdk/consensus/ibft/message_pool"
 	"github.com/0xPolygon/polygon-sdk/consensus/ibft/proto"
+	"github.com/0xPolygon/polygon-sdk/contracts2"
 	"github.com/0xPolygon/polygon-sdk/crypto"
 	"github.com/0xPolygon/polygon-sdk/network"
 	"github.com/0xPolygon/polygon-sdk/protocol"
@@ -72,6 +79,7 @@ type Ibft struct {
 
 	// aux test methods
 	// forceTimeoutCh bool
+	pool *pool.MessagePool
 }
 
 type key struct {
@@ -145,10 +153,12 @@ func Factory(
 
 	p.logger.Info("validator key", "addr", p.validatorKey.NodeID())
 
+	stdLogger := p.logger.StandardLogger(&hclog.StandardLoggerOptions{})
+
 	p.pbft = pbft.New(
 		p.validatorKey,
 		&pbftTransport{p},
-		pbft.WithLogger(p.logger.StandardLogger(&hclog.StandardLoggerOptions{})),
+		pbft.WithLogger(stdLogger),
 	)
 
 	// start the transport protocol
@@ -156,7 +166,106 @@ func Factory(
 		return nil, err
 	}
 
+	if err := p.setupBridge(); err != nil {
+		return nil, err
+	}
+
 	return p, nil
+}
+
+//TODO
+//var transferEvent = abi.MustNewEvent(`event Transfer(address indexed cont)`)
+
+func (i *Ibft) setupBridge() error {
+	stdLogger := i.logger.StandardLogger(&hclog.StandardLoggerOptions{})
+
+	// create the pool
+	tr := &messagePoolTransport{i: i}
+	if err := tr.init(); err != nil {
+		return err
+	}
+	i.pool = pool.NewMessagePool(stdLogger, pool.NodeID(i.validatorKey.String()), tr)
+
+	// start the event tracker
+	addr, metadata := contracts2.GetRootChain()
+
+	provider, err := jsonrpc.NewClient(addr)
+	if err != nil {
+		panic(err)
+	}
+	store, err := boltdbStore.New(i.config.Path + "/deposit.db")
+	if err != nil {
+		panic(err)
+	}
+
+	i.logger.Info("Start tracking events")
+
+	fmt.Println("-- bridge --")
+	fmt.Println(metadata.Bridge)
+
+	tt, err := tracker.NewTracker(provider.Eth(),
+		tracker.WithBatchSize(200),
+		tracker.WithStore(store),
+		tracker.WithFilter(&tracker.FilterConfig{
+			Async: true,
+			Address: []web3.Address{
+				metadata.Bridge,
+			},
+		}),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	go func() {
+		go func() {
+			if err := tt.Sync(context.Background()); err != nil {
+				fmt.Printf("[ERR]: %v", err)
+			}
+		}()
+
+		go func() {
+			for {
+				select {
+				case evnt := <-tt.EventCh:
+					fmt.Println("-- evnt --")
+					fmt.Println(evnt)
+
+				case <-tt.DoneCh:
+					fmt.Println("historical sync done")
+				}
+			}
+		}()
+
+	}()
+
+	return nil
+}
+
+const messagePoolProto = "/pool/0.1"
+
+type messagePoolTransport struct {
+	i *Ibft
+
+	topic *network.Topic
+}
+
+func (m *messagePoolTransport) init() error {
+	// register the gossip protocol
+	topic, err := m.i.network.NewTopic(messagePoolProto, &proto.MessageReq{})
+	if err != nil {
+		return err
+	}
+	m.topic = topic
+
+	topic.Subscribe(func(obj interface{}) {
+		m.i.pool.Add(&pool.Message{})
+	})
+	return nil
+}
+
+func (m *messagePoolTransport) Gossip(msg *pool.Message) {
+	m.topic.Publish(&proto.MessageReq{})
 }
 
 type pbftTransport struct {

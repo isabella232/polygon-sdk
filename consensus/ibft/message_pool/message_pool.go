@@ -3,6 +3,8 @@ package pool
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"io/ioutil"
+	"log"
 )
 
 type NodeID string
@@ -24,14 +26,19 @@ type ValidatorSet interface {
 }
 
 type MessagePool struct {
+	logger       *log.Logger
 	local        NodeID
 	transport    Transport
 	messages     map[string]*messageTally
 	validatorSet ValidatorSet
 }
 
-func NewMessagePool(local NodeID, transport Transport) *MessagePool {
+func NewMessagePool(logger *log.Logger, local NodeID, transport Transport) *MessagePool {
+	if logger == nil {
+		logger = log.New(ioutil.Discard, "", 0)
+	}
 	pool := &MessagePool{
+		logger:    logger,
 		local:     local,
 		transport: transport,
 		messages:  make(map[string]*messageTally),

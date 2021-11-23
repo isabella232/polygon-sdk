@@ -7,7 +7,7 @@ func TestMessagePool_Insert(t *testing.T) {
 
 	set := newMockValidatorSet([]string{"A", "B"})
 
-	m := NewMessagePool(NodeID("A"), nil)
+	m := NewMessagePool(nil, NodeID("A"), nil)
 	m.Reset(set)
 
 	m.addImpl(&Message{

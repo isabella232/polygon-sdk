@@ -6,6 +6,7 @@ config*.json
 bin/
 
 test-chain*
+test-rootchain
 .idea
 
 # Exclude the build .exe file from version control
