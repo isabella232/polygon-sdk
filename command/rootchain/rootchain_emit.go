@@ -68,7 +68,7 @@ func (c *RootchainEmitCommand) Run(args []string) int {
 	bridge := bindings.NewBridge(metadata.Bridge, provider)
 	bridge.Contract().SetFrom(owner[0])
 
-	txn := bridge.SetGreeting("xxx")
+	txn := bridge.EmitEvent()
 	if err := txn.DoAndWait(); err != nil {
 		panic(err)
 	}

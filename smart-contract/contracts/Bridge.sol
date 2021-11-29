@@ -5,21 +5,13 @@ import "hardhat/console.sol";
 
 contract Bridge {
     event Transfer();
-    string private greeting;
 
-    constructor(string memory _greeting) {
-        console.log("Deploying a Greeter with greeting:", _greeting);
-        greeting = _greeting;
-    }
-
-    function greet() public view returns (string memory) {
-        return greeting;
-    }
-
-    function setGreeting(string memory _greeting) public {
-        console.log("Changing greeting from '%s' to '%s'", greeting, _greeting);
-        greeting = _greeting;
-
+    function emitEvent() public {
         emit Transfer();
+    }
+    
+    // it is done because of an small error in the Go abigen function
+    function dummy() public view returns (uint256) {
+        return 0;
     }
 }

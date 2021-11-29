@@ -3,22 +3,27 @@ package server
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/0xPolygon/polygon-sdk/chain"
+	"github.com/0xPolygon/polygon-sdk/consensus/ibft"
 	"github.com/0xPolygon/polygon-sdk/crypto"
 	"github.com/0xPolygon/polygon-sdk/helper/keccak"
 	"github.com/0xPolygon/polygon-sdk/jsonrpc"
 	"github.com/0xPolygon/polygon-sdk/network"
 	"github.com/0xPolygon/polygon-sdk/server/proto"
+	"github.com/0xPolygon/polygon-sdk/smart-contract/bindings"
 	"github.com/0xPolygon/polygon-sdk/state"
 	"github.com/0xPolygon/polygon-sdk/state/runtime"
 	"github.com/0xPolygon/polygon-sdk/txpool"
 	"github.com/0xPolygon/polygon-sdk/types"
+	"github.com/umbracle/go-web3/abi"
 
 	"github.com/hashicorp/go-hclog"
 	"google.golang.org/grpc"
@@ -111,8 +116,63 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 	m.executor.SetRuntime(precompiled.NewPrecompiled())
 	m.executor.SetRuntime(evm.NewEVM())
 
-	// compute the genesis root state
-	genesisRoot := m.executor.WriteGenesis(config.Chain.Genesis.Alloc)
+	writeGenesis := func() types.Hash {
+		// V3NOTE: We are going tocreate the validator contract as part of genesis because
+		// this way we can start not just the smart contract but also the internal data.
+
+		initialValidators, err := readValidatorsByRegexp("test-chain-")
+		if err != nil {
+			panic(err)
+		}
+
+		// This works but the abi from the abigen dont, figure it out. I think it has to be with the ... ternary ops
+		xx := abi.MustNewType("tuple(address[] a)")
+		methodInput, err := xx.Encode(map[string]interface{}{
+			"a": initialValidators,
+		})
+		if err != nil {
+			panic(err)
+		}
+
+		// Now we need to send an intiail transaction to set the data in.
+		txn, err := m.executor.BeginTxnGenesis()
+		if err != nil {
+			panic(err)
+		}
+
+		input := []byte{}
+		input = append(input, bindings.ValidatorBin()...)
+		input = append(input, methodInput...)
+
+		// make contract deployment for the validator node
+		transaction := &types.Transaction{
+			Input:    input,
+			To:       nil,
+			From:     types.Address{0x1},
+			Value:    big.NewInt(0),
+			GasPrice: big.NewInt(0),
+		}
+		fmt.Println("---")
+		fmt.Println(txn.ApplyInt(1000000, transaction))
+
+		address := crypto.CreateAddress(types.Address{0x1}, 0)
+
+		// this address is determinsitic, that is why other layers (i.e. ibft) aleady know it.
+		fmt.Println("-- address --")
+		fmt.Println(address)
+
+		_, root := txn.Commit()
+		return root
+
+		//_, root := txn.Commit(false)
+		//return types.BytesToHash(root)
+	}
+
+	genesisRoot := writeGenesis()
+
+	fmt.Println("-- genesis root --")
+	fmt.Println(genesisRoot)
+
 	config.Chain.Genesis.StateRoot = genesisRoot
 
 	// blockchain object
@@ -436,4 +496,41 @@ func createDir(path string) error {
 	}
 
 	return nil
+}
+
+/// it is here temproarily to avoid cycle
+
+func readValidatorsByRegexp(prefix string) ([]types.Address, error) {
+	validators := []types.Address{}
+
+	files, err := ioutil.ReadDir(".")
+	if err != nil {
+		return nil, err
+	}
+
+	for _, file := range files {
+		path := file.Name()
+		if !file.IsDir() {
+			continue
+		}
+		if !strings.HasPrefix(path, prefix) {
+			continue
+		}
+
+		// try to read key from the filepath/consensus/<key> path
+		possibleConsensusPath := filepath.Join(path, "consensus", ibft.IbftKeyName)
+
+		// check if path exists
+		if _, err := os.Stat(possibleConsensusPath); os.IsNotExist(err) {
+			continue
+		}
+
+		priv, err := crypto.GenerateOrReadPrivateKey(possibleConsensusPath)
+		if err != nil {
+			return nil, err
+		}
+		validators = append(validators, crypto.PubKeyToAddress(&priv.PublicKey))
+	}
+
+	return validators, nil
 }

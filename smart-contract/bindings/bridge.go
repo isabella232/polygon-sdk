@@ -37,31 +37,31 @@ func (b *Bridge) Contract() *contract.Contract {
 
 // calls
 
-// Greet calls the greet method in the solidity contract
-func (b *Bridge) Greet(block ...web3.BlockNumber) (retval0 string, err error) {
+// Dummy calls the dummy method in the solidity contract
+func (b *Bridge) Dummy(block ...web3.BlockNumber) (retval0 *big.Int, err error) {
 	var out map[string]interface{}
 	var ok bool
 
-	out, err = b.c.Call("greet", web3.EncodeBlock(block...))
+	out, err = b.c.Call("dummy", web3.EncodeBlock(block...))
 	if err != nil {
 		return
 	}
 
 	// decode outputs
-	retval0, ok = out["0"].(string)
+	retval0, ok = out["0"].(*big.Int)
 	if !ok {
 		err = fmt.Errorf("failed to encode output at index 0")
 		return
 	}
-
+	
 	return
 }
 
 // txns
 
-// SetGreeting sends a setGreeting transaction in the solidity contract
-func (b *Bridge) SetGreeting(greeting string) *contract.Txn {
-	return b.c.Txn("setGreeting", greeting)
+// EmitEvent sends a emitEvent transaction in the solidity contract
+func (b *Bridge) EmitEvent() *contract.Txn {
+	return b.c.Txn("emitEvent")
 }
 
 // events

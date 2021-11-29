@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/0xPolygon/polygon-sdk/command/genesis"
 	"github.com/0xPolygon/polygon-sdk/command/helper"
 	"github.com/0xPolygon/polygon-sdk/contracts2"
 	"github.com/0xPolygon/polygon-sdk/smart-contract/bindings"
@@ -166,15 +167,29 @@ func (c *RootchainStartCommand) initialDeploy() error {
 
 	time.Sleep(5 * time.Second)
 
+	// read validator accounts
+	validators, err := genesis.ReadValidatorsByRegexp("test-chain-")
+	if err != nil {
+		panic(err)
+	}
+
 	// deploy bridge
 	owner, err := provider.Eth().Accounts()
 	if err != nil {
 		return err
 	}
 
-	txn := bindings.DeployBridge(provider, owner[0], "abcd")
+	txn := bindings.DeployBridge(provider, owner[0], validators)
 	if err := txn.DoAndWait(); err != nil {
 		panic(err)
+	}
+
+	code, err := provider.Eth().GetCode(txn.Receipt().ContractAddress, web3.Latest)
+	if err != nil {
+		panic(err)
+	}
+	if code == "0x" {
+		panic("not deployed")
 	}
 
 	metadata = &contracts2.Metadata{

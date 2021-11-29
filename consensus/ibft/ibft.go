@@ -5,12 +5,14 @@ import (
 	"crypto/ecdsa"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"path/filepath"
 	"time"
 
 	"github.com/0xPolygon/pbft-consensus"
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/umbracle/go-web3"
+	"github.com/umbracle/go-web3/abi"
 	"github.com/umbracle/go-web3/jsonrpc"
 	"github.com/umbracle/go-web3/tracker"
 
@@ -61,7 +63,8 @@ type Ibft struct {
 
 	txpool *txpool.TxPool // Reference to the transaction pool
 
-	store     *snapshotStore // Snapshot store that keeps track of all snapshots
+	// we need to remove this to disable completely ibft
+	// store     *snapshotStore // Snapshot store that keeps track of all snapshots
 	epochSize uint64
 
 	//msgQueue *msgQueue     // Structure containing different message queues
@@ -204,7 +207,7 @@ func (i *Ibft) setupBridge() error {
 	fmt.Println(metadata.Bridge)
 
 	tt, err := tracker.NewTracker(provider.Eth(),
-		tracker.WithBatchSize(200),
+		tracker.WithBatchSize(2000),
 		tracker.WithStore(store),
 		tracker.WithFilter(&tracker.FilterConfig{
 			Async: true,
@@ -456,6 +459,7 @@ func (i *Ibft) createKey() error {
 
 const IbftKeyName = "validator.key"
 
+// deprecated
 type fsm struct {
 	parent *types.Header
 
@@ -469,7 +473,7 @@ type fsm struct {
 }
 
 func (f *fsm) BuildProposal() (*pbft.Proposal, error) {
-	block, err := f.i.buildBlock(f.snap, f.parent)
+	block, err := f.i.buildBlock(f.parent, nil) // deprecated
 	if err != nil {
 		panic(err)
 	}
@@ -626,20 +630,168 @@ func (f *fsm) init() error {
 	return nil
 }
 
+/// --- FSM implementation of PoS ---
+
+type fsm2 struct {
+	i            *Ibft
+	parent       *types.Header
+	validators   []types.Address
+	lastProposer types.Address
+}
+
+func (f *fsm2) init() error {
+	f.validators = f.i.getValidators(f.parent)
+
+	var err error
+
+	var lastProposer types.Address
+	if f.parent.Number != 0 {
+		lastProposer, err = ecrecoverFromHeader(f.parent)
+		if err != nil {
+			return err
+		}
+	}
+	f.lastProposer = lastProposer
+	return nil
+}
+
+func (f *fsm2) BuildProposal() (*pbft.Proposal, error) {
+	block, err := f.i.buildBlock(f.parent, f.validators)
+	if err != nil {
+		panic(err)
+	}
+
+	data := block.MarshalRLP()
+	proposal := &pbft.Proposal{
+		Time: time.Unix(int64(block.Header.Timestamp), 0),
+		Data: data,
+	}
+	return proposal, nil
+}
+
+func (f *fsm2) Validate(proposal []byte) error {
+	return nil
+}
+
+func (f *fsm2) Insert(p *pbft.SealedProposal) error {
+
+	block := &types.Block{}
+	if err := block.UnmarshalRLP(p.Proposal); err != nil {
+		panic(err)
+	}
+	if err := f.i.insertBlock(block, p.CommittedSeals); err != nil {
+		panic(err)
+	}
+	return nil
+}
+
+func (f *fsm2) Height() uint64 {
+	return f.parent.Number + 1
+}
+
+func (f *fsm2) ValidatorSet() pbft.ValidatorSet {
+	dd := &dummySet{set: f.validators, lastProposer: f.lastProposer}
+	return dd
+}
+
+func (f *fsm2) Hash(p []byte) []byte {
+	block := &types.Block{}
+	if err := block.UnmarshalRLP(p); err != nil {
+		panic(err)
+	}
+	hash, err := calculateHeaderHash(block.Header)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("-- hash --")
+	fmt.Println(block.Header)
+	fmt.Println(hash)
+
+	msg := commitMsg(hash)
+
+	fmt.Println("-- msg --")
+	fmt.Println(msg)
+
+	return msg
+}
+
+func (f *fsm2) IsStuck(num uint64) (uint64, bool) {
+	if f.i.syncer == nil {
+		// we cannot answer it. skip it
+		return 0, false
+	}
+
+	bestPeer := f.i.syncer.BestPeer()
+	if bestPeer == nil {
+		// there is no best peer, skip it
+		return 0, false
+	}
+
+	lastProposal := f.i.blockchain.Header() // isnt this parent??
+	if bestPeer.Number() > lastProposal.Number {
+		// we are stuck
+		return bestPeer.Number(), true
+	}
+	return 0, false
+}
+
+func (i *Ibft) getValidators(parent *types.Header) []types.Address {
+	// get a state reference for this to make calls and txns!
+	// to call we need to use the parent reference
+
+	xx, err := abi.NewABIFromList([]string{
+		"function getValidators() returns (address[])",
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	tt, err := i.executor.BeginTxn(parent.StateRoot, parent, types.Address{})
+	if err != nil {
+		panic(err)
+	}
+
+	txn := &types.Transaction{
+		GasPrice: big.NewInt(100),
+		Gas:      parent.GasLimit,
+		To:       &contracts2.ValidatorContractAddr,
+		Value:    big.NewInt(0),
+		Input:    xx.Methods["getValidators"].ID(),
+	}
+	res := tt.ApplyInt(parent.GasLimit, txn)
+
+	raw, err := xx.Methods["getValidators"].Decode(res.ReturnValue)
+	if err != nil {
+		panic(err)
+	}
+	validators := raw["0"].([]web3.Address)
+
+	finalRes := []types.Address{}
+	for _, v := range validators {
+		finalRes = append(finalRes, types.StringToAddress(v.String()))
+	}
+	return finalRes
+}
+
 // start starts the IBFT consensus state machine
 func (i *Ibft) start() {
 
 SYNC:
+	//fmt.Println("X")
 	// try to sync as much as possible
 	i.runSyncState()
-
+	//we need to remove this since it uses the old snapshot
+	//fmt.Println("Y")
 	for {
+		parent := i.blockchain.Header()
 
-		// build the reference for this block
-		fsm := &fsm{
+		// read the current validators from the contract
+		fsm := &fsm2{
 			i:      i,
-			parent: i.blockchain.Header(),
+			parent: parent,
 		}
+
 		// initialize the wrapper
 		if err := fsm.init(); err != nil {
 			panic(err)
@@ -731,12 +883,18 @@ func (i *Ibft) runSyncState() {
 
 		// check if we are a validator and enabled
 		header := i.blockchain.Header()
-		snap, err := i.getSnapshot(header.Number)
-		if err != nil {
-			return false
-		}
 
-		if snap.Set.Includes(i.validatorKey.addr) {
+		val := i.getValidators(header)
+		dd := &dummySet{set: val, lastProposer: types.Address{}}
+
+		/*
+			snap, err := i.getSnapshot(header.Number)
+			if err != nil {
+				return false
+			}
+		*/
+
+		if dd.Includes(pbft.NodeID(i.validatorKey.addr.String())) {
 			// Do not need to do this since it will be done later
 			return true
 		}
@@ -803,7 +961,7 @@ func (i *Ibft) runSyncState() {
 var defaultBlockPeriod = 2 * time.Second
 
 // buildBlock builds the block, based on the passed in snapshot and parent header
-func (i *Ibft) buildBlock(snap *Snapshot, parent *types.Header) (*types.Block, error) {
+func (i *Ibft) buildBlock( /*snap *Snapshot, */ parent *types.Header, validators []types.Address) (*types.Block, error) {
 	header := &types.Header{
 		ParentHash: parent.Hash,
 		Number:     parent.Number + 1,
@@ -828,15 +986,17 @@ func (i *Ibft) buildBlock(snap *Snapshot, parent *types.Header) (*types.Block, e
 	}
 	header.GasLimit = gasLimit
 
-	// try to pick a candidate
-	if candidate := i.operator.getNextCandidate(snap); candidate != nil {
-		header.Miner = types.StringToAddress(candidate.Address)
-		if candidate.Auth {
-			header.Nonce = nonceAuthVote
-		} else {
-			header.Nonce = nonceDropVote
+	/*
+		// try to pick a candidate
+		if candidate := i.operator.getNextCandidate(snap); candidate != nil {
+			header.Miner = types.StringToAddress(candidate.Address)
+			if candidate.Auth {
+				header.Nonce = nonceAuthVote
+			} else {
+				header.Nonce = nonceDropVote
+			}
 		}
-	}
+	*/
 
 	// set the timestamp
 	parentTime := time.Unix(int64(parent.Timestamp), 0)
@@ -848,7 +1008,7 @@ func (i *Ibft) buildBlock(snap *Snapshot, parent *types.Header) (*types.Block, e
 	header.Timestamp = uint64(headerTime.Unix())
 
 	// we need to include in the extra field the current set of validators
-	putIbftExtraValidators(header, snap.Set)
+	putIbftExtraValidators(header, validators)
 
 	transition, err := i.executor.BeginTxn(parent.StateRoot, header, types.Address{})
 	if err != nil {
@@ -1404,10 +1564,12 @@ func (i *Ibft) VerifyHeader(parent, header *types.Header) error {
 		return err
 	}
 
-	// process the new block in order to update the snapshot
-	if err := i.processHeaders([]*types.Header{header}); err != nil {
-		return err
-	}
+	/*
+		// process the new block in order to update the snapshot
+		if err := i.processHeaders([]*types.Header{header}); err != nil {
+			return err
+		}
+	*/
 
 	return nil
 }
@@ -1422,11 +1584,13 @@ func (i *Ibft) Close() error {
 	close(i.closeCh)
 
 	if i.config.Path != "" {
-		err := i.store.saveToPath(i.config.Path)
+		/*
+			err := i.store.saveToPath(i.config.Path)
 
-		if err != nil {
-			return err
-		}
+			if err != nil {
+				return err
+			}
+		*/
 	}
 	return nil
 }

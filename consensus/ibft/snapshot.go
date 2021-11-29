@@ -2,7 +2,6 @@ package ibft
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -24,102 +23,113 @@ var (
 
 // setupSnapshot sets up the snapshot store for the IBFT object
 func (i *Ibft) setupSnapshot() error {
-	i.store = newSnapshotStore()
+	return nil
+	// disabled
 
-	// Read from storage
-	if i.config.Path != "" {
-		if err := i.store.loadFromPath(i.config.Path); err != nil {
-			return err
-		}
-	}
+	/*
+		i.store = newSnapshotStore()
 
-	header := i.blockchain.Header()
-	meta, err := i.getSnapshotMetadata()
-	if err != nil {
-		return err
-	}
-
-	if header.Number == 0 {
-		// Add genesis
-		if err := i.addHeaderSnap(header); err != nil {
-			return err
-		}
-	}
-
-	// If the snapshot is not found, or the latest snapshot belongs to a previous epoch,
-	// we need to start rebuilding the snapshot from the beginning of the current epoch
-	// in order to have all the votes and validators correctly set in the snapshot,
-	// since they reset every epoch.
-
-	// Get epoch of latest header and saved metadata
-	currentEpoch := header.Number / i.epochSize
-	metaEpoch := meta.LastBlock / i.epochSize
-	snapshot, _ := i.getSnapshot(header.Number)
-	if snapshot == nil || metaEpoch < currentEpoch {
-		// Restore snapshot at the beginning of the current epoch by block header
-		// if list doesn't have any snapshots to calculate snapshot for the next header
-		i.logger.Info("snapshot was not found, restore snapshot at beginning of current epoch", "current epoch", currentEpoch)
-		beginHeight := currentEpoch * i.epochSize
-		beginHeader, ok := i.blockchain.GetHeaderByNumber(beginHeight)
-		if !ok {
-			return fmt.Errorf("header at %d not found", beginHeight)
-		}
-
-		if err := i.addHeaderSnap(beginHeader); err != nil {
-			return err
-		}
-		i.store.updateLastBlock(beginHeight)
-
-		if meta, err = i.getSnapshotMetadata(); err != nil {
-			return err
-		}
-	}
-
-	// Process headers if we missed some blocks in the current epoch
-	if header.Number > meta.LastBlock {
-		i.logger.Info("syncing past snapshots", "from", meta.LastBlock, "to", header.Number)
-
-		for num := meta.LastBlock + 1; num <= header.Number; num++ {
-			if num == 0 {
-				continue
-			}
-			header, ok := i.blockchain.GetHeaderByNumber(num)
-			if !ok {
-				return fmt.Errorf("header %d not found", num)
-			}
-			if err := i.processHeaders([]*types.Header{header}); err != nil {
+		// Read from storage
+		if i.config.Path != "" {
+			if err := i.store.loadFromPath(i.config.Path); err != nil {
 				return err
 			}
 		}
-	}
+
+		header := i.blockchain.Header()
+		meta, err := i.getSnapshotMetadata()
+		if err != nil {
+			return err
+		}
+
+		if header.Number == 0 {
+			// Add genesis
+			if err := i.addHeaderSnap(header); err != nil {
+				return err
+			}
+		}
+
+		// If the snapshot is not found, or the latest snapshot belongs to a previous epoch,
+		// we need to start rebuilding the snapshot from the beginning of the current epoch
+		// in order to have all the votes and validators correctly set in the snapshot,
+		// since they reset every epoch.
+
+		// Get epoch of latest header and saved metadata
+		currentEpoch := header.Number / i.epochSize
+		metaEpoch := meta.LastBlock / i.epochSize
+		snapshot, _ := i.getSnapshot(header.Number)
+		if snapshot == nil || metaEpoch < currentEpoch {
+			// Restore snapshot at the beginning of the current epoch by block header
+			// if list doesn't have any snapshots to calculate snapshot for the next header
+			i.logger.Info("snapshot was not found, restore snapshot at beginning of current epoch", "current epoch", currentEpoch)
+			beginHeight := currentEpoch * i.epochSize
+			beginHeader, ok := i.blockchain.GetHeaderByNumber(beginHeight)
+			if !ok {
+				return fmt.Errorf("header at %d not found", beginHeight)
+			}
+
+			if err := i.addHeaderSnap(beginHeader); err != nil {
+				return err
+			}
+			i.store.updateLastBlock(beginHeight)
+
+			if meta, err = i.getSnapshotMetadata(); err != nil {
+				return err
+			}
+		}
+
+		// Process headers if we missed some blocks in the current epoch
+		if header.Number > meta.LastBlock {
+			i.logger.Info("syncing past snapshots", "from", meta.LastBlock, "to", header.Number)
+
+			for num := meta.LastBlock + 1; num <= header.Number; num++ {
+				if num == 0 {
+					continue
+				}
+				header, ok := i.blockchain.GetHeaderByNumber(num)
+				if !ok {
+					return fmt.Errorf("header %d not found", num)
+				}
+				if err := i.processHeaders([]*types.Header{header}); err != nil {
+					return err
+				}
+			}
+		}
+	*/
 
 	return nil
 }
 
 // addHeaderSnap creates the initial snapshot, and adds it to the snapshot store
 func (i *Ibft) addHeaderSnap(header *types.Header) error {
-	// Genesis header needs to be set by hand, all the other
-	// snapshots are set as part of processHeaders
-	extra, err := getIbftExtra(header)
-	if err != nil {
-		return err
-	}
+	panic("unimplemented")
 
-	// Create the first snapshot from the genesis
-	snap := &Snapshot{
-		Hash:   header.Hash.String(),
-		Number: header.Number,
-		Votes:  []*Vote{},
-		Set:    extra.Validators,
-	}
+	/*
+		// Genesis header needs to be set by hand, all the other
+		// snapshots are set as part of processHeaders
+		extra, err := getIbftExtra(header)
+		if err != nil {
+			return err
+		}
 
-	i.store.add(snap)
+		// Create the first snapshot from the genesis
+		snap := &Snapshot{
+			Hash:   header.Hash.String(),
+			Number: header.Number,
+			Votes:  []*Vote{},
+			Set:    extra.Validators,
+		}
+
+		i.store.add(snap)
+	*/
 
 	return nil
 }
 
 // getLatestSnapshot returns the latest snapshot object
 func (i *Ibft) getLatestSnapshot() (*Snapshot, error) {
+	panic("unimplemented")
+
 	meta, err := i.getSnapshotMetadata()
 	if err != nil {
 		return nil, err
@@ -137,152 +147,163 @@ func (i *Ibft) getLatestSnapshot() (*Snapshot, error) {
 
 // It processes passed in headers, and updates the snapshot / snapshot store
 func (i *Ibft) processHeaders(headers []*types.Header) error {
-	if len(headers) == 0 {
-		return nil
-	}
+	panic("unimplemented")
 
-	parentSnap, err := i.getSnapshot(headers[0].Number - 1)
-	if err != nil {
-		return err
-	}
-	snap := parentSnap.Copy()
+	/*
+		if len(headers) == 0 {
+			return nil
+		}
 
-	// saveSnap is a callback function to set height and hash in current snapshot with given header
-	// and store the snapshot to snapshot store
-	saveSnap := func(h *types.Header) {
-		snap.Number = h.Number
-		snap.Hash = h.Hash.String()
-		i.store.add(snap)
-
-		// use saved snapshot as new parent and clone it for next
-		parentSnap = snap
-		snap = parentSnap.Copy()
-	}
-
-	for _, h := range headers {
-		number := h.Number
-
-		proposer, err := ecrecoverFromHeader(h)
+		parentSnap, err := i.getSnapshot(headers[0].Number - 1)
 		if err != nil {
 			return err
 		}
+		snap := parentSnap.Copy()
 
-		// Check if the recovered proposer is part of the validator set
-		if !snap.Set.Includes(proposer) {
-			return fmt.Errorf("unauthorized proposer")
+		// saveSnap is a callback function to set height and hash in current snapshot with given header
+		// and store the snapshot to snapshot store
+		saveSnap := func(h *types.Header) {
+			snap.Number = h.Number
+			snap.Hash = h.Hash.String()
+			i.store.add(snap)
+
+			// use saved snapshot as new parent and clone it for next
+			parentSnap = snap
+			snap = parentSnap.Copy()
 		}
 
-		if number%i.epochSize == 0 {
-			// during a checkpoint block, we reset the votes
-			// and there cannot be any proposals
-			snap.Votes = nil
-			saveSnap(h)
+		for _, h := range headers {
+			number := h.Number
 
-			// remove in-memory snapshots from two epochs before this one
-			epoch := int(number/i.epochSize) - 2
-			if epoch > 0 {
-				purgeBlock := uint64(epoch) * i.epochSize
-				i.store.deleteLower(purgeBlock)
+			proposer, err := ecrecoverFromHeader(h)
+			if err != nil {
+				return err
 			}
-			continue
-		}
 
-		// if we have a miner address, this might be a vote
-		if h.Miner == types.ZeroAddress {
-			continue
-		}
+			// Check if the recovered proposer is part of the validator set
+			if !snap.Set.Includes(proposer) {
+				return fmt.Errorf("unauthorized proposer")
+			}
 
-		// the nonce selects the action
-		var authorize bool
-		if h.Nonce == nonceAuthVote {
-			authorize = true
-		} else if h.Nonce == nonceDropVote {
-			authorize = false
-		} else {
-			return fmt.Errorf("incorrect vote nonce")
-		}
+			if number%i.epochSize == 0 {
+				// during a checkpoint block, we reset the votes
+				// and there cannot be any proposals
+				snap.Votes = nil
+				saveSnap(h)
 
-		// validate the vote
-		if authorize {
-			// we can only authorize if they are not on the validators list
-			if snap.Set.Includes(h.Miner) {
+				// remove in-memory snapshots from two epochs before this one
+				epoch := int(number/i.epochSize) - 2
+				if epoch > 0 {
+					purgeBlock := uint64(epoch) * i.epochSize
+					i.store.deleteLower(purgeBlock)
+				}
 				continue
 			}
-		} else {
-			// we can only remove if they are part of the validators list
-			if !snap.Set.Includes(h.Miner) {
+
+			// if we have a miner address, this might be a vote
+			if h.Miner == types.ZeroAddress {
 				continue
 			}
-		}
 
-		voteCount := snap.Count(func(v *Vote) bool {
-			return v.Validator == proposer && v.Address == h.Miner
-		})
-
-		if voteCount > 1 {
-			// there can only be one vote per validator per address
-			return fmt.Errorf("more than one proposal per validator per address found")
-		}
-		if voteCount == 0 {
-			// cast the new vote since there is no one yet
-			snap.Votes = append(snap.Votes, &Vote{
-				Validator: proposer,
-				Address:   h.Miner,
-				Authorize: authorize,
-			})
-		}
-
-		// check the tally for the proposed validator
-		tally := snap.Count(func(v *Vote) bool {
-			return v.Address == h.Miner
-		})
-
-		// If more than a half of all validators voted
-		if tally > snap.Set.Len()/2 {
-			if authorize {
-				// add the candidate to the validators list
-				snap.Set.Add(h.Miner)
+			// the nonce selects the action
+			var authorize bool
+			if h.Nonce == nonceAuthVote {
+				authorize = true
+			} else if h.Nonce == nonceDropVote {
+				authorize = false
 			} else {
-				// remove the candidate from the validators list
-				snap.Set.Del(h.Miner)
+				return fmt.Errorf("incorrect vote nonce")
+			}
 
-				// remove any votes casted by the removed validator
-				snap.RemoveVotes(func(v *Vote) bool {
-					return v.Validator == h.Miner
+			// validate the vote
+			if authorize {
+				// we can only authorize if they are not on the validators list
+				if snap.Set.Includes(h.Miner) {
+					continue
+				}
+			} else {
+				// we can only remove if they are part of the validators list
+				if !snap.Set.Includes(h.Miner) {
+					continue
+				}
+			}
+
+			voteCount := snap.Count(func(v *Vote) bool {
+				return v.Validator == proposer && v.Address == h.Miner
+			})
+
+			if voteCount > 1 {
+				// there can only be one vote per validator per address
+				return fmt.Errorf("more than one proposal per validator per address found")
+			}
+			if voteCount == 0 {
+				// cast the new vote since there is no one yet
+				snap.Votes = append(snap.Votes, &Vote{
+					Validator: proposer,
+					Address:   h.Miner,
+					Authorize: authorize,
 				})
 			}
 
-			// remove all the votes that promoted this validator
-			snap.RemoveVotes(func(v *Vote) bool {
+			// check the tally for the proposed validator
+			tally := snap.Count(func(v *Vote) bool {
 				return v.Address == h.Miner
 			})
+
+			// If more than a half of all validators voted
+			if tally > snap.Set.Len()/2 {
+				if authorize {
+					// add the candidate to the validators list
+					snap.Set.Add(h.Miner)
+				} else {
+					// remove the candidate from the validators list
+					snap.Set.Del(h.Miner)
+
+					// remove any votes casted by the removed validator
+					snap.RemoveVotes(func(v *Vote) bool {
+						return v.Validator == h.Miner
+					})
+				}
+
+				// remove all the votes that promoted this validator
+				snap.RemoveVotes(func(v *Vote) bool {
+					return v.Address == h.Miner
+				})
+			}
+
+			if !snap.Equal(parentSnap) {
+				saveSnap(h)
+			}
 		}
 
-		if !snap.Equal(parentSnap) {
-			saveSnap(h)
-		}
-	}
-
-	// update the metadata
-	i.store.updateLastBlock(headers[len(headers)-1].Number)
+		// update the metadata
+		i.store.updateLastBlock(headers[len(headers)-1].Number)
+	*/
 
 	return nil
 }
 
 // getSnapshotMetadata returns the latest snapshot metadata
 func (i *Ibft) getSnapshotMetadata() (*snapshotMetadata, error) {
-	meta := &snapshotMetadata{
-		LastBlock: i.store.getLastBlock(),
-	}
+	panic("unimplemented")
 
-	return meta, nil
+	/*
+		meta := &snapshotMetadata{
+			LastBlock: i.store.getLastBlock(),
+		}
+		return meta, nil
+	*/
 }
 
 // getSnapshot returns the snapshot at the specified block height
 func (i *Ibft) getSnapshot(num uint64) (*Snapshot, error) {
-	snap := i.store.find(num)
+	panic("unimplemented")
 
-	return snap, nil
+	/*
+		snap := i.store.find(num)
+
+		return snap, nil
+	*/
 }
 
 // Vote defines the vote structure

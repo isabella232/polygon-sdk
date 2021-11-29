@@ -189,7 +189,7 @@ func (c *GenesisCommand) Run(args []string) int {
 			}
 		} else if ibftValidatorsPrefixPath != "" {
 			// read all folders with the ibftValidatorsPrefixPath and search for Istanbul addresses
-			if validators, err = readValidatorsByRegexp(ibftValidatorsPrefixPath); err != nil {
+			if validators, err = ReadValidatorsByRegexp(ibftValidatorsPrefixPath); err != nil {
 				c.UI.Error(fmt.Sprintf("failed to read from prefix: %v", err))
 				return 1
 			}
@@ -246,7 +246,7 @@ func (c *GenesisCommand) Run(args []string) int {
 	return 0
 }
 
-func readValidatorsByRegexp(prefix string) ([]types.Address, error) {
+func ReadValidatorsByRegexp(prefix string) ([]types.Address, error) {
 	validators := []types.Address{}
 
 	files, err := ioutil.ReadDir(".")

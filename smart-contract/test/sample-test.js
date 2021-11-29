@@ -1,24 +1,35 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
+const addr = "0x774ED5BcdF0aAA000cD9dCeAF3923271c7cd0b4B"
+
 describe("Bridge", function () {
   it("Should return the new greeting once it's changed", async function () {
     const Bridge = await ethers.getContractFactory("Bridge");
-    const bridge = await Bridge.deploy("Hello, world!");
+    const bridge = await Bridge.deploy();
     await bridge.deployed();
 
-    expect(await bridge.greet()).to.equal("Hello, world!");
-
-    const setGreetingTx = await bridge.setGreeting("Hola, mundo!");
-
-    // wait until the transaction is mined
-    const receipt = await setGreetingTx.wait();
+    // emit and event and wait
+    const eventTx = await bridge.emitEvent();
+    const receipt = await eventTx.wait();
 
     console.log(receipt)
 
-    //expect(setGreetingTx).to.emit("Transfer")
-    //setGreetingTx.to.emit(eventEmitter, "Transfer")
+    //expect(await bridge.greet()).to.equal("Hola, mundo!");
+  });
+});
 
-    expect(await bridge.greet()).to.equal("Hola, mundo!");
+describe("Validator", function () {
+  it("Should return the new greeting once it's changed", async function () {
+    const Validator = await ethers.getContractFactory("Validator");
+    const val = await Validator.deploy([addr]);
+    await val.deployed();
+
+    // set the validators
+    await val.setValidators([addr])
+
+    // check the validators
+    const [validator] = await val.getValidators()
+    expect(validator).to.equal(addr)
   });
 });
