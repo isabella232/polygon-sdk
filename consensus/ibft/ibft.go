@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"path/filepath"
@@ -82,7 +83,7 @@ type Ibft struct {
 
 	// aux test methods
 	// forceTimeoutCh bool
-	pool *pool.MessagePool
+	pool *pool.MessagePool // this is for state sync right now
 }
 
 type key struct {
@@ -169,15 +170,11 @@ func Factory(
 		return nil, err
 	}
 
-	if err := p.setupBridge(); err != nil {
-		return nil, err
-	}
-
 	return p, nil
 }
 
 //TODO
-//var transferEvent = abi.MustNewEvent(`event Transfer(address indexed cont)`)
+var stateSyncEvent = abi.MustNewEvent(`event Transfer(address token, address to, uint256 amount)`)
 
 func (i *Ibft) setupBridge() error {
 	stdLogger := i.logger.StandardLogger(&hclog.StandardLoggerOptions{})
@@ -187,7 +184,13 @@ func (i *Ibft) setupBridge() error {
 	if err := tr.init(); err != nil {
 		return err
 	}
-	i.pool = pool.NewMessagePool(stdLogger, pool.NodeID(i.validatorKey.String()), tr)
+	i.pool = pool.NewMessagePool(stdLogger, pbft.NodeID(i.validatorKey.String()), tr)
+
+	// NOTE: We need to initialize the pool because it will discard any messages that are not
+	// in the validator set and at this point it does not have validator set.
+	val := i.getValidators(i.blockchain.Header())
+	dd := &dummySet{set: val}
+	i.pool.Reset(dd)
 
 	// start the event tracker
 	addr, metadata := contracts2.GetRootChain()
@@ -234,6 +237,20 @@ func (i *Ibft) setupBridge() error {
 					fmt.Println("-- evnt --")
 					fmt.Println(evnt)
 
+					if len(evnt.Removed) != 0 {
+						panic("this will not happen anymore after tracker v2")
+					}
+					for _, log := range evnt.Added {
+						// for simplicity, I am going to marshal the whole log
+						data, err := log.MarshalJSON()
+						if err != nil {
+							panic(err)
+						}
+						i.pool.Add(&pool.Message{
+							Data: data,
+							From: i.validatorKey.NodeID(),
+						}, true)
+					}
 				case <-tt.DoneCh:
 					fmt.Println("historical sync done")
 				}
@@ -255,6 +272,7 @@ type messagePoolTransport struct {
 
 func (m *messagePoolTransport) init() error {
 	// register the gossip protocol
+	// V3NOTE: We can piggyback the proto message for ibft though later one we can change it
 	topic, err := m.i.network.NewTopic(messagePoolProto, &proto.MessageReq{})
 	if err != nil {
 		return err
@@ -262,13 +280,28 @@ func (m *messagePoolTransport) init() error {
 	m.topic = topic
 
 	topic.Subscribe(func(obj interface{}) {
-		m.i.pool.Add(&pool.Message{})
+		val := obj.(*proto.MessageReq)
+
+		var msg *pool.Message
+		if err := json.Unmarshal(val.Proposal.Value, &msg); err != nil {
+			panic(err)
+		}
+		m.i.pool.Add(msg, false)
 	})
 	return nil
 }
 
 func (m *messagePoolTransport) Gossip(msg *pool.Message) {
-	m.topic.Publish(&proto.MessageReq{})
+	data, err := json.Marshal(msg)
+	if err != nil {
+		panic(err)
+	}
+	req := &proto.MessageReq{
+		Proposal: &any.Any{
+			Value: data,
+		},
+	}
+	m.topic.Publish(req)
 }
 
 type pbftTransport struct {
@@ -288,6 +321,13 @@ func (p *pbftTransport) Gossip(msg *pbft.MessageReq) error {
 
 // Start starts the IBFT consensus
 func (i *Ibft) Start() error {
+
+	// we need to wait here to start the bridge because it queries the blockchain header and we are not
+	// sure up to this point who is the header (only in genesis case though)
+	if err := i.setupBridge(); err != nil {
+		panic(err)
+	}
+
 	// Start the syncer
 	i.syncer.Start()
 
@@ -459,6 +499,7 @@ func (i *Ibft) createKey() error {
 
 const IbftKeyName = "validator.key"
 
+/*
 // deprecated
 type fsm struct {
 	parent *types.Header
@@ -515,36 +556,6 @@ func (f *fsm) Height() uint64 {
 	return f.parent.Number + 1
 }
 
-type dummySet struct {
-	lastProposer types.Address
-	set          ValidatorSet
-}
-
-func (d *dummySet) CalcProposer(round uint64) pbft.NodeID {
-	proposer := d.set.CalcProposer(round, d.lastProposer)
-
-	fmt.Println("-- proposer --")
-	fmt.Println(d.set)
-	fmt.Println(d.lastProposer)
-	fmt.Println(round)
-	fmt.Println(proposer)
-
-	return pbft.NodeID(proposer.String())
-}
-
-func (d *dummySet) Includes(id pbft.NodeID) bool {
-	for _, i := range d.set {
-		if i.String() == string(id) {
-			return true
-		}
-	}
-	return false
-}
-
-func (d *dummySet) Len() int {
-	return d.set.Len()
-}
-
 // ValidatorSet returns the validator set for the current round
 func (f *fsm) ValidatorSet() pbft.ValidatorSet {
 
@@ -579,14 +590,6 @@ func (f *fsm) Hash(p []byte) []byte {
 
 	fmt.Println("-- msg --")
 	fmt.Println(msg)
-
-	/*
-		panic("xxx")
-
-		h := sha1.New()
-		h.Write(p)
-		return h.Sum(nil)
-	*/
 
 	return msg
 }
@@ -629,8 +632,32 @@ func (f *fsm) init() error {
 	f.lastProposer = lastProposer
 	return nil
 }
+*/
 
 /// --- FSM implementation of PoS ---
+
+type dummySet struct {
+	lastProposer types.Address
+	set          ValidatorSet
+}
+
+func (d *dummySet) CalcProposer(round uint64) pbft.NodeID {
+	proposer := d.set.CalcProposer(round, d.lastProposer)
+	return pbft.NodeID(proposer.String())
+}
+
+func (d *dummySet) Includes(id pbft.NodeID) bool {
+	for _, i := range d.set {
+		if i.String() == string(id) {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *dummySet) Len() int {
+	return d.set.Len()
+}
 
 type fsm2 struct {
 	i            *Ibft
@@ -655,8 +682,117 @@ func (f *fsm2) init() error {
 	return nil
 }
 
+const epochSize = 10
+
+func (f *fsm2) isEndOfEpoch() bool {
+	return f.Height()%10 == 0
+}
+
 func (f *fsm2) BuildProposal() (*pbft.Proposal, error) {
-	block, err := f.i.buildBlock(f.parent, f.validators)
+
+	// SEVERAL WAYS TO APPROACH THE PROBLEM OF SENDING CUSTOM TXNS TO THE CLIENT
+	// 1. WE EITHER LET THE PROPOSER CREATE THE TXNS AND SEND THEM TO THE VALIDATORS
+	// 	  THEN, EACH ONE SHOULD VALIDATE EACH OF THOSE CUSTOM TRANSACTIONS (I.E. IS THIS MESSAGE POOL GOOD?)
+	//    (I.E. DOES IT INCLUDES VALIDATORSETCHANGE AT THE END OF EPOCH?)
+	// 2. WE ONLY PASS THE BLOCK TRANSACTIONS AND EACH VALIDATOR ON ITS OWN INCLUDES THE TXNS AND BLOCKS
+	//    THE ONLY PROBLEM HERE IS THAT WE ARE LOCKING A STRANGE HASH IN PBFT AND WE WILL ONLY KNOW AFTER
+	// 	  THE FINAL BLOCK IS INCLUDE IS SOMETHING WENT WRONG. (THIS IS, STATE TXNS ARE NOT PART OF THE PBFT PROTOCOL).
+	// 3. A MIX OF BOTH, WE HAVE A GENERIC FUNCTION CALLED GETSTATETXNS() THAT RETURNS ALL THE STATE TRANSACTIONS
+	//    DURING THE VALIDATION STAGE, WE CHECK THAT ALL THIS TRANSACTIONS ARE INCLUDED IN THE LOCKED BLOCK.
+
+	block, err := f.i.buildBlock(f.parent, f.validators, func(v *state.Transition) (txns []*types.Transaction) {
+		if !f.isEndOfEpoch() {
+			return
+		}
+
+		// V3NOTE: If we are at the end of the epoch we try to:
+		// 1. fit as many state sync as possible from the pool
+		// Create a transaction with the item, this will be special state transaction (for now)
+		// that does not check the sender.
+		for _, msg := range f.i.pool.GetReady() {
+			// convert msg into log
+			var log web3.Log
+			if err := log.UnmarshalJSON(msg.Data); err != nil {
+				panic(err)
+			}
+
+			fmt.Println("__ MSG __")
+			fmt.Println(msg)
+			fmt.Println(log)
+
+			// convert log into a transaction
+			vals, err := stateSyncEvent.ParseLog(&log)
+			if err != nil {
+				panic(err)
+			}
+			fmt.Println("-- vals --")
+			fmt.Println(vals)
+
+			// address token, address to, uint256 amount
+			tokenAddrRaw := vals["token"].(web3.Address)
+			toAddr := vals["to"].(web3.Address)
+			amount := vals["amount"].(*big.Int)
+
+			// V3NOTE: THIS ONLY WORKS FOR NOW FOR ERC20 TOKENS. IT IS TRIVIAL TO DO IT FOR ARBITRARY VALUES LATER.
+			// This works but the abi from the abigen dont, figure it out. I think it has to be with the ... ternary ops
+			method, err := abi.NewMethod("function stateSync(address to, uint256 amount)")
+			if err != nil {
+				panic(err)
+			}
+			input, err := method.Encode(map[string]interface{}{
+				"to":     toAddr,
+				"amount": amount,
+			})
+			if err != nil {
+				panic(err)
+			}
+
+			tokenAddr := types.StringToAddress(tokenAddrRaw.String())
+			transaction := &types.Transaction{
+				Input:    input,
+				To:       &tokenAddr,
+				Value:    big.NewInt(0),
+				GasPrice: big.NewInt(0),
+			}
+			fmt.Printf("---> STATE SYNC CONTRACT: %s %s %d\n", tokenAddr, toAddr, amount)
+
+			// V3NOTE: IMPORTANT FOR THIS THINGS TO USE WRITE() BECAUSE THIS FUNCTION WILL INTERNALLY HANDLE EVERYTHING
+			// OF STATESYNC FUNCTIONS. OTHERWISE, YOU MIGHT MISS SOME THINGS THAT ARE PART OF THE CONSENSUS AS WELL.
+			if err := v.Write(transaction); err != nil {
+				panic(err)
+			}
+			txns = append(txns, transaction)
+		}
+
+		// 2. update the validator set.
+		{
+			method, err := abi.NewMethod("function updateValidatorSet(bytes data)")
+			if err != nil {
+				// we can do this better
+				panic(err)
+			}
+			input, err := method.Encode(map[string]interface{}{
+				"data": []byte{},
+			})
+			if err != nil {
+				panic(err)
+			}
+			transaction := &types.Transaction{
+				Input:    input,
+				To:       &contracts2.ValidatorContractAddr,
+				Value:    big.NewInt(0),
+				GasPrice: big.NewInt(0),
+			}
+			fmt.Println("---> UPDATE VALIDATOR SET <---")
+
+			if err := v.Write(transaction); err != nil {
+				panic(err)
+			}
+			txns = append(txns, transaction)
+		}
+
+		return
+	})
 	if err != nil {
 		panic(err)
 	}
@@ -704,14 +840,14 @@ func (f *fsm2) Hash(p []byte) []byte {
 		panic(err)
 	}
 
-	fmt.Println("-- hash --")
-	fmt.Println(block.Header)
-	fmt.Println(hash)
+	//fmt.Println("-- hash --")
+	//fmt.Println(block.Header)
+	//fmt.Println(hash)
 
 	msg := commitMsg(hash)
 
-	fmt.Println("-- msg --")
-	fmt.Println(msg)
+	//fmt.Println("-- msg --")
+	//fmt.Println(msg)
 
 	return msg
 }
@@ -813,9 +949,6 @@ SYNC:
 			// stopped
 			return
 		}
-
-		// ...
-		// if end of epoch...
 	}
 }
 
@@ -961,7 +1094,7 @@ func (i *Ibft) runSyncState() {
 var defaultBlockPeriod = 2 * time.Second
 
 // buildBlock builds the block, based on the passed in snapshot and parent header
-func (i *Ibft) buildBlock( /*snap *Snapshot, */ parent *types.Header, validators []types.Address) (*types.Block, error) {
+func (i *Ibft) buildBlock( /*snap *Snapshot, */ parent *types.Header, validators []types.Address, handler func(t *state.Transition) []*types.Transaction) (*types.Block, error) {
 	header := &types.Header{
 		ParentHash: parent.Hash,
 		Number:     parent.Number + 1,
@@ -1038,9 +1171,18 @@ func (i *Ibft) buildBlock( /*snap *Snapshot, */ parent *types.Header, validators
 	}
 	i.logger.Info("picked out txns from pool", "num", len(txns), "remaining", i.txpool.Length())
 
+	// a bit ugly but works
+	// V3Notes: This does not take into account many things like:
+	// 1. Do we have enough gas to make this post hooks?
+	// 2. Should we send state txns first?
+	stateTxns := handler(transition)
+	txns = append(txns, stateTxns...)
+
 	_, root := transition.Commit()
 	header.StateRoot = root
 	header.GasUsed = transition.TotalGas()
+
+	i.logger.Info("final root", header.StateRoot)
 
 	// build the block
 	block := consensus.BuildBlock(consensus.BuildBlockParams{
@@ -1513,7 +1655,7 @@ func (i *Ibft) isSealing() bool {
 }
 
 // verifyHeaderImpl implements the actual header verification logic
-func (i *Ibft) verifyHeaderImpl(snap *Snapshot, parent, header *types.Header) error {
+func (i *Ibft) verifyHeaderImpl(parent, header *types.Header) error {
 	// ensure the extra data is correctly formatted
 	if _, err := getIbftExtra(header); err != nil {
 		return err
@@ -1539,30 +1681,38 @@ func (i *Ibft) verifyHeaderImpl(snap *Snapshot, parent, header *types.Header) er
 		return fmt.Errorf("wrong difficulty")
 	}
 
-	// verify the sealer
-	if err := verifySigner(snap, header); err != nil {
-		return err
-	}
+	/*
+		// V3NOTE: I KNOW, WE HAVE TO ENABLE THIS
+		// verify the sealer
+		if err := verifySigner(snap, header); err != nil {
+			return err
+		}
+	*/
 
 	return nil
 }
 
 // VerifyHeader wrapper for verifying headers
 func (i *Ibft) VerifyHeader(parent, header *types.Header) error {
-	snap, err := i.getSnapshot(parent.Number)
-	if err != nil {
-		return err
-	}
+	/*
+		snap, err := i.getSnapshot(parent.Number)
+		if err != nil {
+			return err
+		}
+	*/
 
 	// verify all the header fields + seal
-	if err := i.verifyHeaderImpl(snap, parent, header); err != nil {
+	if err := i.verifyHeaderImpl(parent, header); err != nil {
 		return err
 	}
 
-	// verify the commited seals
-	if err := verifyCommitedFields(snap, header); err != nil {
-		return err
-	}
+	/*
+		// V3NOTE: Restore
+		// verify the commited seals
+		if err := verifyCommitedFields(header); err != nil {
+			return err
+		}
+	*/
 
 	/*
 		// process the new block in order to update the snapshot

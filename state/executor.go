@@ -223,22 +223,34 @@ var emptyFrom = types.Address{}
 func (t *Transition) Write(txn *types.Transaction) error {
 	signer := crypto.NewSigner(t.config, uint64(t.r.config.ChainID))
 
+	// V3NOTE: THIS IS THE BIGGEST CHANGE TO SUPPORT THSI LOCAL TRANSACTIONS HERE.
+	isStateSyncTxn := false
+
 	var err error
 	if txn.From == emptyFrom {
-		// Decrypt the from address
-		txn.From, err = signer.Sender(txn)
-		if err != nil {
-			return NewTransitionApplicationError(err, false)
+		if len(txn.R) == 0 {
+			isStateSyncTxn = true
+		} else {
+			// Decrypt the from address
+			txn.From, err = signer.Sender(txn)
+			if err != nil {
+				return NewTransitionApplicationError(err, false)
+			}
 		}
 	}
 
 	// Make a local copy and apply the transaction
 	msg := txn.Copy()
 
-	result, e := t.Apply(msg)
-	if e != nil {
-		t.logger.Error("failed to apply tx", "err", e)
-		return e
+	var result *runtime.ExecutionResult
+	if isStateSyncTxn {
+		result = t.ApplyInt(1000000000, msg)
+	} else {
+		result, err = t.Apply(msg)
+	}
+	if err != nil {
+		t.logger.Error("failed to apply tx", "err", err)
+		return err
 	}
 	t.totalGas += result.GasUsed
 

@@ -20,4 +20,8 @@ contract Validator {
     function getValidators() public view returns (address[] memory _validators) {
         return validators;
     }
+
+    function updateValidatorSet(bytes memory data) public payable {
+        // later on we do stuff here... that update the validators variable
+    }
 }

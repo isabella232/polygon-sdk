@@ -152,14 +152,30 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 			Value:    big.NewInt(0),
 			GasPrice: big.NewInt(0),
 		}
-		fmt.Println("---")
-		fmt.Println(txn.ApplyInt(1000000, transaction))
-
 		address := crypto.CreateAddress(types.Address{0x1}, 0)
 
+		fmt.Println("--- DEPLOY VALIDATOR SOURCE CONTRACT ---")
+		fmt.Println(txn.ApplyInt(1000000, transaction))
 		// this address is determinsitic, that is why other layers (i.e. ibft) aleady know it.
-		fmt.Println("-- address --")
 		fmt.Println(address)
+
+		{
+			// DO THE SAME TO DEPLOY THE ERC20 TOKEN, AGAIN DO IT IN A DETERMINISTIC ADDRESS
+
+			// make contract deployment for the validator node
+			transaction := &types.Transaction{
+				Input:    bindings.MintERC20Bin(),
+				To:       nil,
+				From:     types.Address{0x2}, // use another address to deploy this
+				Value:    big.NewInt(0),
+				GasPrice: big.NewInt(0),
+			}
+			address := crypto.CreateAddress(types.Address{0x2}, 0)
+
+			fmt.Println("--- DEPLOY DESTINY TOKEN CONTRACT ---")
+			fmt.Println(txn.ApplyInt(100000000000000, transaction))
+			fmt.Println(address)
+		}
 
 		_, root := txn.Commit()
 		return root

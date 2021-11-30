@@ -11,7 +11,14 @@ import (
 	web3 "github.com/umbracle/go-web3"
 )
 
-var ValidatorContractAddr = types.StringToAddress("0x0742cB5613C40C305FDEa246Be6304DbCE829C3C")
+// These are contracts for the PoS chain.
+var (
+	// Validator contract in PoS chain
+	ValidatorContractAddr = types.StringToAddress("0x0742cB5613C40C305FDEa246Be6304DbCE829C3C")
+
+	// ERC20 contract in PoS chain
+	ERC20ContractAddr = types.StringToAddress("0x523F99698E739F98664c3Eb1967FE1d17F17A946")
+)
 
 type Metadata struct {
 	Bridge web3.Address

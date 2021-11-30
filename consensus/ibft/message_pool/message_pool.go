@@ -1,13 +1,14 @@
 package pool
 
 import (
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
 	"io/ioutil"
 	"log"
-)
 
-type NodeID string
+	"github.com/0xPolygon/pbft-consensus"
+)
 
 type Message struct {
 	// Hash is the hash of the data
@@ -17,23 +18,18 @@ type Message struct {
 	Data []byte
 
 	// From is the sender of the message
-	From NodeID
-}
-
-type ValidatorSet interface {
-	Includes(NodeID) bool
-	Size() int
+	From pbft.NodeID
 }
 
 type MessagePool struct {
 	logger       *log.Logger
-	local        NodeID
+	local        pbft.NodeID
 	transport    Transport
 	messages     map[string]*messageTally
-	validatorSet ValidatorSet
+	validatorSet pbft.ValidatorSet
 }
 
-func NewMessagePool(logger *log.Logger, local NodeID, transport Transport) *MessagePool {
+func NewMessagePool(logger *log.Logger, local pbft.NodeID, transport Transport) *MessagePool {
 	if logger == nil {
 		logger = log.New(ioutil.Discard, "", 0)
 	}
@@ -51,7 +47,12 @@ func (m *MessagePool) GetReady() []*Message {
 
 	for _, msg := range m.messages {
 		if msg.ready {
-			res = append(res, nil) // include int he message tally the raw proposal so that we have easy access
+			msg := &Message{
+				// note that initially this was a message to tally votes (since incldue the frrom adress)
+				// we are just reusing it to send back the event
+				Data: msg.proposal,
+			}
+			res = append(res, msg) // include int he message tally the raw proposal so that we have easy access
 		}
 	}
 
@@ -60,15 +61,34 @@ func (m *MessagePool) GetReady() []*Message {
 	return res
 }
 
-func (m *MessagePool) Add(msg *Message) {
+// NOTE: This is recursive (reset also uses Add) which makes it complex sometimes to figure out where to draw lines
+// and see which parts does what.
+func (m *MessagePool) Add(msg *Message, gossip bool) {
 	// gossip
 	// m.transport.Gossip(msg)
 
+	if msg.From == "" {
+		panic("NOT FOUND?")
+	}
+
+	if msg.Hash == "" {
+		// just hash the data ourselves if nothing found
+		h := sha1.New()
+		h.Write(msg.Data)
+		msg.Hash = hex.EncodeToString(h.Sum(nil))
+	}
+
 	// add to pool
 	m.addImpl(msg)
+
+	if gossip {
+		m.transport.Gossip(msg)
+	}
 }
 
 func (m *MessagePool) addImpl(msg *Message) {
+	m.logger.Printf("[INFO] new message in the pool: from %s, hash %s", msg.From, msg.Hash)
+
 	if !m.validatorSet.Includes(msg.From) {
 		return
 	}
@@ -83,12 +103,12 @@ func (m *MessagePool) addImpl(msg *Message) {
 		m.messages[msg.Hash] = tally
 	}
 	count := tally.addMsg(msg)
-	if count > m.validatorSet.Size()/2 { // mock value (depending on validatorset)
+	if count > m.validatorSet.Len()/2 { // mock value (depending on validatorset)
 		tally.ready = true
 	}
 }
 
-func (m *MessagePool) Reset(validatorSet ValidatorSet) {
+func (m *MessagePool) Reset(validatorSet pbft.ValidatorSet) {
 	m.validatorSet = validatorSet
 
 	// remove the values from the pool but reschedule the ones we have seen
@@ -104,13 +124,13 @@ func (m *MessagePool) Reset(validatorSet ValidatorSet) {
 
 	// send again the rescheduled messages
 	for _, msg := range reschedule {
-		m.Add(msg)
+		m.addImpl(msg)
 	}
 }
 
 type messageTally struct {
 	// tally of seen messages
-	tally map[NodeID]*Message
+	tally map[pbft.NodeID]*Message
 
 	// arbitrary bytes of the proposal
 	proposal []byte
@@ -121,7 +141,7 @@ type messageTally struct {
 
 func newMessageTally(proposal []byte) *messageTally {
 	return &messageTally{
-		tally:    map[NodeID]*Message{},
+		tally:    map[pbft.NodeID]*Message{},
 		proposal: proposal,
 	}
 }
@@ -133,7 +153,7 @@ func (m *messageTally) addMsg(msg *Message) int {
 	return len(m.tally)
 }
 
-func (m *messageTally) hasLocal(local NodeID) (*Message, bool) {
+func (m *messageTally) hasLocal(local pbft.NodeID) (*Message, bool) {
 	msg, ok := m.tally[local]
 	return msg, ok
 }

@@ -4,10 +4,10 @@ pragma solidity ^0.8.0;
 import "hardhat/console.sol";
 
 contract Bridge {
-    event Transfer();
+    event Transfer(address token, address to, uint256 amount);
 
-    function emitEvent() public {
-        emit Transfer();
+    function emitEvent(address token, address to, uint256 amount) public {
+        emit Transfer(token, to, amount);
     }
     
     // it is done because of an small error in the Go abigen function

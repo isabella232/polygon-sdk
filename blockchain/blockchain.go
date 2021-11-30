@@ -711,9 +711,16 @@ func (b *Blockchain) processBlock(block *types.Block) (*state.BlockResult, error
 		return nil, fmt.Errorf("bad size of receipts and transactions")
 	}
 
+	fmt.Println("-- receipts --", len(receipts))
+	for _, r := range receipts {
+		fmt.Println("Receipt", r.ContractAddress, r.Status)
+	}
+
+	fmt.Println("State root", result.Root)
+
 	// Validate the fields
 	if result.Root != header.StateRoot {
-		return nil, fmt.Errorf("invalid merkle root")
+		return nil, fmt.Errorf("invalid merkle root: %s %s", result.Root, header.StateRoot)
 	}
 
 	if result.TotalGas != header.GasUsed {

@@ -20,6 +20,6 @@ protoc:
 .PHONY: abigen
 abigen:
 	# You need to clone go-web3 and run "make abigen"
-	# ../../umbracle/go-web3/abigen/bin/abigen --source ./contracts2/bridge.sol --output ./contracts2 --package contracts2
 	../../umbracle/go-web3/abigen/bin/abigen --source ./smart-contract/artifacts/contracts/Bridge.sol/Bridge.json --output ./smart-contract/bindings --package bindings
 	../../umbracle/go-web3/abigen/bin/abigen --source ./smart-contract/artifacts/contracts/Validator.sol/Validator.json --output ./smart-contract/bindings --package bindings
+	../../umbracle/go-web3/abigen/bin/abigen --source ./smart-contract/artifacts/contracts/MintERC20.sol/MintERC20.json --output ./smart-contract/bindings --package bindings

@@ -3,6 +3,7 @@ package util
 import (
 	"os"
 
+	"github.com/0xPolygon/polygon-sdk/command/clean"
 	"github.com/0xPolygon/polygon-sdk/command/dev"
 	"github.com/0xPolygon/polygon-sdk/command/genesis"
 	"github.com/0xPolygon/polygon-sdk/command/helper"
@@ -62,6 +63,10 @@ func Commands() map[string]cli.CommandFactory {
 		},
 		"rootchain emit": func() (cli.Command, error) {
 			return &rootchain.RootchainEmitCommand{UI: ui}, nil
+		},
+
+		"clean": func() (cli.Command, error) {
+			return &clean.CleanCommand{UI: ui}, nil
 		},
 
 		// GENERIC SDK COMMANDS //

@@ -64,4 +64,9 @@ func (v *Validator) SetValidators(validators []web3.Address) *contract.Txn {
 	return v.c.Txn("setValidators", validators)
 }
 
+// UpdateValidatorSet sends a updateValidatorSet transaction in the solidity contract
+func (v *Validator) UpdateValidatorSet(data []byte) *contract.Txn {
+	return v.c.Txn("updateValidatorSet", data)
+}
+
 // events

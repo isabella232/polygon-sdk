@@ -2,11 +2,13 @@ package rootchain
 
 import (
 	"fmt"
+	"math/big"
 
 	"github.com/0xPolygon/polygon-sdk/command/helper"
 	"github.com/0xPolygon/polygon-sdk/contracts2"
 	"github.com/0xPolygon/polygon-sdk/smart-contract/bindings"
 	"github.com/mitchellh/cli"
+	"github.com/umbracle/go-web3"
 	"github.com/umbracle/go-web3/jsonrpc"
 )
 
@@ -68,7 +70,8 @@ func (c *RootchainEmitCommand) Run(args []string) int {
 	bridge := bindings.NewBridge(metadata.Bridge, provider)
 	bridge.Contract().SetFrom(owner[0])
 
-	txn := bridge.EmitEvent()
+	// desintation and amount does not matter that much right now since we only want to see tokens transfered
+	txn := bridge.EmitEvent(web3.Address(contracts2.ERC20ContractAddr), web3.Address{0x1}, big.NewInt(100))
 	if err := txn.DoAndWait(); err != nil {
 		panic(err)
 	}

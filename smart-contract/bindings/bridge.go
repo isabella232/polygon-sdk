@@ -60,8 +60,8 @@ func (b *Bridge) Dummy(block ...web3.BlockNumber) (retval0 *big.Int, err error) 
 // txns
 
 // EmitEvent sends a emitEvent transaction in the solidity contract
-func (b *Bridge) EmitEvent() *contract.Txn {
-	return b.c.Txn("emitEvent")
+func (b *Bridge) EmitEvent(token web3.Address, to web3.Address, amount *big.Int) *contract.Txn {
+	return b.c.Txn("emitEvent", token, to, amount)
 }
 
 // events
