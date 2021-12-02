@@ -48,7 +48,7 @@ func NewExecutor(config *chain.Params, s State, logger hclog.Logger) *Executor {
 	}
 }
 
-func (e *Executor) WriteGenesis(alloc map[types.Address]*chain.GenesisAccount) types.Hash {
+func (e *Executor) WriteGenesis(alloc map[types.Address]*chain.GenesisAccount, handler ...func(txn *Txn)) types.Hash {
 	snap := e.state.NewSnapshot()
 	txn := NewTxn(e.state, snap)
 
@@ -65,6 +65,10 @@ func (e *Executor) WriteGenesis(alloc map[types.Address]*chain.GenesisAccount) t
 		for key, value := range account.Storage {
 			txn.SetState(addr, key, value)
 		}
+	}
+
+	if len(handler) != 0 {
+		handler[0](txn)
 	}
 
 	_, root := txn.Commit(false)
@@ -118,6 +122,35 @@ func (e *Executor) StateAt(root types.Hash) (Snapshot, error) {
 // GetForksInTime returns the active forks at the given block height
 func (e *Executor) GetForksInTime(blockNumber uint64) chain.ForksInTime {
 	return e.config.Forks.At(blockNumber)
+}
+
+func (e *Executor) BeginTxnGenesis() (*Transition, error) {
+	config := e.config.Forks.At(0)
+
+	auxSnap2 := e.state.NewSnapshot()
+	newTxn := NewTxn(e.state, auxSnap2)
+
+	env2 := runtime.TxContext{
+		Coinbase:   types.Address{},
+		Number:     0,
+		Difficulty: types.Hash{},
+		GasLimit:   0,
+		ChainID:    int64(e.config.ChainID),
+	}
+
+	txn := &Transition{
+		logger:   e.logger,
+		r:        e,
+		ctx:      env2,
+		state:    newTxn,
+		auxState: e.state,
+		config:   config,
+		gasPool:  uint64(env2.GasLimit),
+
+		receipts: []*types.Receipt{},
+		totalGas: 0,
+	}
+	return txn, nil
 }
 
 func (e *Executor) BeginTxn(parentRoot types.Hash, header *types.Header, coinbaseReceiver types.Address) (*Transition, error) {
@@ -190,22 +223,34 @@ var emptyFrom = types.Address{}
 func (t *Transition) Write(txn *types.Transaction) error {
 	signer := crypto.NewSigner(t.config, uint64(t.r.config.ChainID))
 
+	// V3NOTE: THIS IS THE BIGGEST CHANGE TO SUPPORT THSI LOCAL TRANSACTIONS HERE.
+	isStateSyncTxn := false
+
 	var err error
 	if txn.From == emptyFrom {
-		// Decrypt the from address
-		txn.From, err = signer.Sender(txn)
-		if err != nil {
-			return NewTransitionApplicationError(err, false)
+		if len(txn.R) == 0 {
+			isStateSyncTxn = true
+		} else {
+			// Decrypt the from address
+			txn.From, err = signer.Sender(txn)
+			if err != nil {
+				return NewTransitionApplicationError(err, false)
+			}
 		}
 	}
 
 	// Make a local copy and apply the transaction
 	msg := txn.Copy()
 
-	result, e := t.Apply(msg)
-	if e != nil {
-		t.logger.Error("failed to apply tx", "err", e)
-		return e
+	var result *runtime.ExecutionResult
+	if isStateSyncTxn {
+		result = t.ApplyInt(1000000000, msg)
+	} else {
+		result, err = t.Apply(msg)
+	}
+	if err != nil {
+		t.logger.Error("failed to apply tx", "err", err)
+		return err
 	}
 	t.totalGas += result.GasUsed
 
@@ -355,6 +400,26 @@ func NewTransitionApplicationError(err error, isRecoverable bool) *TransitionApp
 	}
 }
 
+func (t *Transition) ApplyInt(gasLeft uint64, msg *types.Transaction) *runtime.ExecutionResult {
+	txn := t.state
+
+	// Set the specific transaction fields in the context
+	t.ctx.GasPrice = types.BytesToHash(msg.GasPrice.Bytes())
+	t.ctx.Origin = msg.From
+
+	value := new(big.Int).Set(msg.Value)
+
+	var result *runtime.ExecutionResult = nil
+	if msg.IsContractCreation() {
+		result = t.Create2(msg.From, msg.Input, value, gasLeft)
+	} else {
+		txn.IncrNonce(msg.From)
+		result = t.Call2(msg.From, *msg.To, msg.Input, value, gasLeft)
+	}
+
+	return result
+}
+
 func (t *Transition) apply(msg *types.Transaction) (*runtime.ExecutionResult, error) {
 	// First check this message satisfies all consensus rules before
 	// applying the message. The rules include these clauses
@@ -402,19 +467,24 @@ func (t *Transition) apply(msg *types.Transaction) (*runtime.ExecutionResult, er
 	}
 
 	gasPrice := new(big.Int).Set(msg.GasPrice)
-	value := new(big.Int).Set(msg.Value)
 
-	// Set the specific transaction fields in the context
-	t.ctx.GasPrice = types.BytesToHash(gasPrice.Bytes())
-	t.ctx.Origin = msg.From
+	/*
+		value := new(big.Int).Set(msg.Value)
 
-	var result *runtime.ExecutionResult = nil
-	if msg.IsContractCreation() {
-		result = t.Create2(msg.From, msg.Input, value, gasLeft)
-	} else {
-		txn.IncrNonce(msg.From)
-		result = t.Call2(msg.From, *msg.To, msg.Input, value, gasLeft)
-	}
+		// Set the specific transaction fields in the context
+		t.ctx.GasPrice = types.BytesToHash(msg.GasPrice.Bytes())
+		t.ctx.Origin = msg.From
+
+		var result *runtime.ExecutionResult = nil
+		if msg.IsContractCreation() {
+			result = t.Create2(msg.From, msg.Input, value, gasLeft)
+		} else {
+			txn.IncrNonce(msg.From)
+			result = t.Call2(msg.From, *msg.To, msg.Input, value, gasLeft)
+		}
+	*/
+
+	result := t.ApplyInt(gasLeft, msg)
 
 	refund := txn.GetRefund()
 	result.UpdateGasUsed(msg.Gas, refund)

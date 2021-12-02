@@ -3,12 +3,14 @@ package util
 import (
 	"os"
 
+	"github.com/0xPolygon/polygon-sdk/command/clean"
 	"github.com/0xPolygon/polygon-sdk/command/dev"
 	"github.com/0xPolygon/polygon-sdk/command/genesis"
 	"github.com/0xPolygon/polygon-sdk/command/helper"
 	"github.com/0xPolygon/polygon-sdk/command/ibft"
 	"github.com/0xPolygon/polygon-sdk/command/monitor"
 	"github.com/0xPolygon/polygon-sdk/command/peers"
+	"github.com/0xPolygon/polygon-sdk/command/rootchain"
 	"github.com/0xPolygon/polygon-sdk/command/server"
 	"github.com/0xPolygon/polygon-sdk/command/status"
 	"github.com/0xPolygon/polygon-sdk/command/txpool"
@@ -53,6 +55,19 @@ func Commands() map[string]cli.CommandFactory {
 	txPoolStatusCmd := txpool.TxPoolStatus{Meta: meta}
 
 	return map[string]cli.CommandFactory{
+
+		// ROOT CHAIN COMMANDS //
+
+		"rootchain start": func() (cli.Command, error) {
+			return &rootchain.RootchainStartCommand{UI: ui}, nil
+		},
+		"rootchain emit": func() (cli.Command, error) {
+			return &rootchain.RootchainEmitCommand{UI: ui}, nil
+		},
+
+		"clean": func() (cli.Command, error) {
+			return &clean.CleanCommand{UI: ui}, nil
+		},
 
 		// GENERIC SDK COMMANDS //
 
