@@ -1,4 +1,4 @@
-package ibft
+package polybft
 
 import (
 	"github.com/0xPolygon/polygon-sdk/helper/keccak"
@@ -8,7 +8,7 @@ import (
 
 // istanbulHeaderHash defines the custom implementation for getting the header hash,
 // because of the extraData field
-func istanbulHeaderHash(h *types.Header) types.Hash {
+func IstanbulHeaderHash(h *types.Header) types.Hash {
 	// this function replaces extra so we need to make a copy
 	h = h.Copy() // Remove later
 

@@ -1,4 +1,4 @@
-package ibft
+package polybft
 
 import (
 	"math"

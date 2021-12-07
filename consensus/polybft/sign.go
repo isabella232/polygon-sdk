@@ -1,10 +1,10 @@
-package ibft
+package polybft
 
 import (
 	"crypto/ecdsa"
 	"fmt"
 
-	"github.com/0xPolygon/polygon-sdk/consensus/ibft/proto"
+	"github.com/0xPolygon/polygon-sdk/consensus/polybft/proto"
 	"github.com/0xPolygon/polygon-sdk/crypto"
 	"github.com/0xPolygon/polygon-sdk/helper/hex"
 	"github.com/0xPolygon/polygon-sdk/helper/keccak"
@@ -151,13 +151,13 @@ func calculateHeaderHash(h *types.Header) ([]byte, error) {
 	return buf, nil
 }
 
-func verifySigner(snap *Snapshot, header *types.Header) error {
+func verifySigner(snap ValidatorSet, header *types.Header) error {
 	signer, err := ecrecoverFromHeader(header)
 	if err != nil {
 		return err
 	}
 
-	if !snap.Set.Includes(signer) {
+	if !snap.Includes(signer) {
 		return fmt.Errorf("not found signer")
 	}
 
@@ -165,7 +165,7 @@ func verifySigner(snap *Snapshot, header *types.Header) error {
 }
 
 // verifyCommitedFields is checking for consensus proof in the header
-func verifyCommitedFields(snap *Snapshot, header *types.Header) error {
+func verifyCommitedFields(snap ValidatorSet, header *types.Header) error {
 	extra, err := getIbftExtra(header)
 	if err != nil {
 		return err
@@ -202,7 +202,7 @@ func verifyCommitedFields(snap *Snapshot, header *types.Header) error {
 		if _, ok := visited[addr]; ok {
 			return fmt.Errorf("repeated seal")
 		} else {
-			if !snap.Set.Includes(addr) {
+			if !snap.Includes(addr) {
 				return fmt.Errorf("signed by non validator: %s", addr.String())
 			}
 			visited[addr] = struct{}{}
@@ -213,7 +213,7 @@ func verifyCommitedFields(snap *Snapshot, header *types.Header) error {
 	// 	2F 	is the required number of honest validators who provided the commited seals
 	// 	+1	is the proposer
 	validSeals := len(visited)
-	if validSeals <= 2*snap.Set.MaxFaultyNodes() {
+	if validSeals <= 2*snap.MaxFaultyNodes() {
 		return fmt.Errorf("not enough seals to seal block")
 	}
 

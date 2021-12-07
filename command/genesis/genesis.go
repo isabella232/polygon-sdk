@@ -11,6 +11,7 @@ import (
 	"github.com/0xPolygon/polygon-sdk/chain"
 	"github.com/0xPolygon/polygon-sdk/command/helper"
 	"github.com/0xPolygon/polygon-sdk/consensus/ibft"
+	"github.com/0xPolygon/polygon-sdk/consensus/polybft"
 	"github.com/0xPolygon/polygon-sdk/crypto"
 	helperFlags "github.com/0xPolygon/polygon-sdk/helper/flags"
 	"github.com/0xPolygon/polygon-sdk/types"
@@ -200,12 +201,12 @@ func (c *GenesisCommand) Run(args []string) int {
 		}
 
 		// create the initial extra data with the validators
-		ibftExtra := &ibft.IstanbulExtra{
+		ibftExtra := &polybft.IstanbulExtra{
 			Validators:    validators,
 			Seal:          []byte{},
 			CommittedSeal: [][]byte{},
 		}
-		extraData = make([]byte, ibft.IstanbulExtraVanity)
+		extraData = make([]byte, polybft.IstanbulExtraVanity)
 		extraData = ibftExtra.MarshalRLPTo(extraData)
 	}
 

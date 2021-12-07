@@ -1,4 +1,4 @@
-package pool
+package polybft
 
 import (
 	"crypto/sha1"
@@ -24,12 +24,12 @@ type Message struct {
 type MessagePool struct {
 	logger       *log.Logger
 	local        pbft.NodeID
-	transport    Transport
+	transport    poolTransport
 	messages     map[string]*messageTally
 	validatorSet pbft.ValidatorSet
 }
 
-func NewMessagePool(logger *log.Logger, local pbft.NodeID, transport Transport) *MessagePool {
+func NewMessagePool(logger *log.Logger, local pbft.NodeID, transport poolTransport) *MessagePool {
 	if logger == nil {
 		logger = log.New(ioutil.Discard, "", 0)
 	}
@@ -173,6 +173,6 @@ func (m *messageTally) hasLocal(local pbft.NodeID) (*Message, bool) {
 // 10. Even when there are slashings do we have to reset the message tally?
 // 		- that moment would be good to pass the validator set.
 
-type Transport interface {
+type poolTransport interface {
 	Gossip(msg *Message)
 }
