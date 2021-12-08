@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/0xPolygon/polygon-sdk/contracts2"
 	"github.com/0xPolygon/polygon-sdk/types"
 
 	"github.com/0xPolygon/pbft-consensus"
@@ -21,6 +20,8 @@ import (
 
 type PolyBFT struct {
 	logger *log.Logger
+
+	config *Config
 
 	// pbft is the PBFT consensus engine
 	pbft *pbft.Pbft
@@ -42,9 +43,21 @@ type Executor interface {
 	Call(parent *types.Header, to types.Address, data []byte) ([]byte, error)
 }
 
-func NewPolyBFT(logger *log.Logger, path string, key web3.Key, Executor Executor, Backend Backend, network Transport) (*PolyBFT, error) {
+type Config struct {
+	// JsonRPCEndpoint is the JSONRPC endpoint of the rootchain server
+	JSONRPCEndpoint string
+
+	// Address of the validator contract in sidechain
+	ValidatorContractAddr types.Address
+
+	// Address of the bridge contract in rootchain
+	BridgeAddr types.Address
+}
+
+func NewPolyBFT(logger *log.Logger, config *Config, path string, key web3.Key, Executor Executor, Backend Backend, network Transport) (*PolyBFT, error) {
 	p := &PolyBFT{
 		logger:   logger,
+		config:   config,
 		Executor: Executor,
 		Backend:  Backend,
 		network:  network,
@@ -232,7 +245,7 @@ func (p *PolyBFT) getValidators(parent *types.Header) []types.Address {
 		panic(err)
 	}
 
-	returnValue, err := p.Executor.Call(parent, contracts2.ValidatorContractAddr, xx.Methods["getValidators"].ID())
+	returnValue, err := p.Executor.Call(parent, p.config.ValidatorContractAddr, xx.Methods["getValidators"].ID())
 	if err != nil {
 		panic(err)
 	}
@@ -267,9 +280,9 @@ func (p *PolyBFT) setupBridge() error {
 	p.pool.Reset(dd)
 
 	// start the event tracker
-	addr, metadata := contracts2.GetRootChain()
+	// addr, metadata := contracts2.GetRootChain()
 
-	provider, err := jsonrpc.NewClient(addr)
+	provider, err := jsonrpc.NewClient(p.config.JSONRPCEndpoint)
 	if err != nil {
 		panic(err)
 	}
@@ -278,10 +291,7 @@ func (p *PolyBFT) setupBridge() error {
 		panic(err)
 	}
 
-	p.logger.Print("[INFO] Start tracking events")
-
-	fmt.Println("-- bridge --")
-	fmt.Println(metadata.Bridge)
+	p.logger.Printf("[INFO] Start tracking events: bridge=%s", p.config.BridgeAddr)
 
 	tt, err := tracker.NewTracker(provider.Eth(),
 		tracker.WithBatchSize(2000),
@@ -289,7 +299,7 @@ func (p *PolyBFT) setupBridge() error {
 		tracker.WithFilter(&tracker.FilterConfig{
 			Async: true,
 			Address: []web3.Address{
-				metadata.Bridge,
+				web3.Address(p.config.BridgeAddr),
 			},
 		}),
 	)

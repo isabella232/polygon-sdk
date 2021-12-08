@@ -4,7 +4,6 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/0xPolygon/polygon-sdk/chain"
 	"github.com/0xPolygon/polygon-sdk/consensus/polybft/proto"
 	"github.com/0xPolygon/polygon-sdk/types"
 	"github.com/stretchr/testify/assert"
@@ -59,20 +58,6 @@ func (ap *testerAccountPool) add(accounts ...string) {
 			priv:  priv,
 		})
 	}
-}
-
-func (ap *testerAccountPool) genesis() *chain.Genesis {
-	genesis := &types.Header{
-		MixHash: IstanbulDigest,
-	}
-	putIbftExtraValidators(genesis, ap.ValidatorSet())
-	genesis.ComputeHash()
-
-	c := &chain.Genesis{
-		Mixhash:   genesis.MixHash,
-		ExtraData: genesis.ExtraData,
-	}
-	return c
 }
 
 func (ap *testerAccountPool) get(name string) *testerAccount {

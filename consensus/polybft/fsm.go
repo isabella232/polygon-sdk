@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/0xPolygon/pbft-consensus"
-	"github.com/0xPolygon/polygon-sdk/contracts2"
 	"github.com/0xPolygon/polygon-sdk/types"
 	"github.com/umbracle/go-web3"
 	"github.com/umbracle/go-web3/abi"
@@ -165,10 +164,9 @@ func (f *fsm2) BuildProposal() (*pbft.Proposal, error) {
 			//	}
 			txns = append(txns, &StateTransaction{
 				Input: input,
-				To:    contracts2.ValidatorContractAddr,
+				To:    f.p.config.ValidatorContractAddr,
 			})
 		}
-
 	}
 
 	block, err := f.b.BuildBlock(f.parent, f.validators, txns)

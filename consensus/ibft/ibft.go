@@ -142,7 +142,15 @@ func Factory(
 
 	stdLogger := p.logger.StandardLogger(&hclog.StandardLoggerOptions{})
 
-	pp, err := polybft.NewPolyBFT(stdLogger, p.config.Path, wallet.NewKey(p.validatorKey.priv), p, p, &wrapTransport{network})
+	addr, metadata := contracts2.GetRootChain()
+
+	polybftConfig := &polybft.Config{
+		JSONRPCEndpoint:       addr,
+		BridgeAddr:            types.Address(metadata.Bridge),
+		ValidatorContractAddr: contracts2.ValidatorContractAddr,
+	}
+
+	pp, err := polybft.NewPolyBFT(stdLogger, polybftConfig, p.config.Path, wallet.NewKey(p.validatorKey.priv), p, p, &wrapTransport{network})
 	if err != nil {
 		panic(err)
 	}
