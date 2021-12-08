@@ -12,10 +12,10 @@ func TestExtraEncoding(t *testing.T) {
 
 	cases := []struct {
 		extra []byte
-		data  *IstanbulExtra
+		data  *Extra
 	}{
 		{
-			data: &IstanbulExtra{
+			data: &Extra{
 				Validators: []types.Address{
 					types.StringToAddress("1"),
 				},
@@ -30,7 +30,7 @@ func TestExtraEncoding(t *testing.T) {
 	for _, c := range cases {
 		data := c.data.MarshalRLPTo(nil)
 
-		ii := &IstanbulExtra{}
+		ii := &Extra{}
 		if err := ii.UnmarshalRLP(data); err != nil {
 			t.Fatal(err)
 		}

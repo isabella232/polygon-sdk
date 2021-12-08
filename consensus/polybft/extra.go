@@ -12,11 +12,11 @@ var (
 	// to identify whether the block is from Istanbul consensus engine
 	IstanbulDigest = types.StringToHash("0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365")
 
-	// IstanbulExtraVanity represents a fixed number of extra-data bytes reserved for proposer vanity
-	IstanbulExtraVanity = 32
+	// ExtraVanity represents a fixed number of extra-data bytes reserved for proposer vanity
+	ExtraVanity = 32
 
-	// IstanbulExtraSeal represents the fixed number of extra-data bytes reserved for proposer seal
-	IstanbulExtraSeal = 65
+	// ExtraSeal represents the fixed number of extra-data bytes reserved for proposer seal
+	ExtraSeal = 65
 )
 
 var zeroBytes = make([]byte, 32)
@@ -25,13 +25,13 @@ var zeroBytes = make([]byte, 32)
 func putIbftExtraValidators(h *types.Header, validators []types.Address) {
 	// Pad zeros to the right up to istanbul vanity
 	extra := h.ExtraData
-	if len(extra) < IstanbulExtraVanity {
-		extra = append(extra, zeroBytes[:IstanbulExtraVanity-len(extra)]...)
+	if len(extra) < ExtraVanity {
+		extra = append(extra, zeroBytes[:ExtraVanity-len(extra)]...)
 	} else {
-		extra = extra[:IstanbulExtraVanity]
+		extra = extra[:ExtraVanity]
 	}
 
-	ibftExtra := &IstanbulExtra{
+	ibftExtra := &Extra{
 		Validators:    validators,
 		Seal:          []byte{},
 		CommittedSeal: [][]byte{},
@@ -42,16 +42,16 @@ func putIbftExtraValidators(h *types.Header, validators []types.Address) {
 }
 
 // PutIbftExtra sets the extra data field in the header to the passed in istanbul extra data
-func PutIbftExtra(h *types.Header, istanbulExtra *IstanbulExtra) error {
+func PutIbftExtra(h *types.Header, Extra *Extra) error {
 	// Pad zeros to the right up to istanbul vanity
 	extra := h.ExtraData
-	if len(extra) < IstanbulExtraVanity {
-		extra = append(extra, zeroBytes[:IstanbulExtraVanity-len(extra)]...)
+	if len(extra) < ExtraVanity {
+		extra = append(extra, zeroBytes[:ExtraVanity-len(extra)]...)
 	} else {
-		extra = extra[:IstanbulExtraVanity]
+		extra = extra[:ExtraVanity]
 	}
 
-	data := istanbulExtra.MarshalRLPTo(nil)
+	data := Extra.MarshalRLPTo(nil)
 	extra = append(extra, data...)
 	h.ExtraData = extra
 
@@ -59,13 +59,13 @@ func PutIbftExtra(h *types.Header, istanbulExtra *IstanbulExtra) error {
 }
 
 // getIbftExtra returns the istanbul extra data field from the passed in header
-func getIbftExtra(h *types.Header) (*IstanbulExtra, error) {
-	if len(h.ExtraData) < IstanbulExtraVanity {
+func getIbftExtra(h *types.Header) (*Extra, error) {
+	if len(h.ExtraData) < ExtraVanity {
 		return nil, fmt.Errorf("wrong extra size: %d", len(h.ExtraData))
 	}
 
-	data := h.ExtraData[IstanbulExtraVanity:]
-	extra := &IstanbulExtra{}
+	data := h.ExtraData[ExtraVanity:]
+	extra := &Extra{}
 	if err := extra.UnmarshalRLP(data); err != nil {
 		return nil, err
 	}
@@ -73,20 +73,20 @@ func getIbftExtra(h *types.Header) (*IstanbulExtra, error) {
 	return extra, nil
 }
 
-// IstanbulExtra defines the structure of the extra field for Istanbul
-type IstanbulExtra struct {
+// Extra defines the structure of the extra field for Istanbul
+type Extra struct {
 	Validators    []types.Address
 	Seal          []byte
 	CommittedSeal [][]byte
 }
 
-// MarshalRLPTo defines the marshal function wrapper for IstanbulExtra
-func (i *IstanbulExtra) MarshalRLPTo(dst []byte) []byte {
+// MarshalRLPTo defines the marshal function wrapper for Extra
+func (i *Extra) MarshalRLPTo(dst []byte) []byte {
 	return types.MarshalRLPTo(i.MarshalRLPWith, dst)
 }
 
-// MarshalRLPWith defines the marshal function implementation for IstanbulExtra
-func (i *IstanbulExtra) MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value {
+// MarshalRLPWith defines the marshal function implementation for Extra
+func (i *Extra) MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value {
 	vv := ar.NewArray()
 
 	// Validators
@@ -121,19 +121,19 @@ func (i *IstanbulExtra) MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value {
 	return vv
 }
 
-// UnmarshalRLP defines the unmarshal function wrapper for IstanbulExtra
-func (i *IstanbulExtra) UnmarshalRLP(input []byte) error {
+// UnmarshalRLP defines the unmarshal function wrapper for Extra
+func (i *Extra) UnmarshalRLP(input []byte) error {
 	return types.UnmarshalRlp(i.UnmarshalRLPFrom, input)
 }
 
-// UnmarshalRLPFrom defines the unmarshal implementation for IstanbulExtra
-func (i *IstanbulExtra) UnmarshalRLPFrom(p *fastrlp.Parser, v *fastrlp.Value) error {
+// UnmarshalRLPFrom defines the unmarshal implementation for Extra
+func (i *Extra) UnmarshalRLPFrom(p *fastrlp.Parser, v *fastrlp.Value) error {
 	elems, err := v.GetElems()
 	if err != nil {
 		return err
 	}
 	if num := len(elems); num != 3 {
-		return fmt.Errorf("not enough elements to decode istambul extra, expected 3 but found %d", num)
+		return fmt.Errorf("not enough elements to decode extra, expected 3 but found %d", num)
 	}
 
 	// Validators

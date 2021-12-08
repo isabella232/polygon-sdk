@@ -94,7 +94,7 @@ func writeCommittedSeals(h *types.Header, seals [][]byte) (*types.Header, error)
 	}
 
 	for _, seal := range seals {
-		if len(seal) != IstanbulExtraSeal {
+		if len(seal) != ExtraSeal {
 			return nil, fmt.Errorf("invalid committed seal length")
 		}
 	}
