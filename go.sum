@@ -106,6 +106,7 @@ github.com/btcsuite/btcd v0.21.0-beta/go.mod h1:ZSWyehm27aAuS9bvkATT+Xte3hjHZ+MR
 github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f/go.mod h1:TdznJufoqS23FtqVCzL0ZqgP5MqXbb4fg/WgDys70nA=
 github.com/btcsuite/btcutil v0.0.0-20190207003914-4c204d697803/go.mod h1:+5NJ2+qvTyV9exUAL/rxXi3DcLg2Ts+ymUAY5y4NvMg=
 github.com/btcsuite/btcutil v0.0.0-20190425235716-9e5f4b9a998d/go.mod h1:+5NJ2+qvTyV9exUAL/rxXi3DcLg2Ts+ymUAY5y4NvMg=
+github.com/btcsuite/btcutil v1.0.2 h1:9iZ1Terx9fMIOtq1VrwdqfsATL9MC2l8ZrUY6YZ2uts=
 github.com/btcsuite/btcutil v1.0.2/go.mod h1:j9HUFwoQRsZL3V4n+qG+CUnEGHOarIxfC3Le2Yhbcts=
 github.com/btcsuite/go-socks v0.0.0-20170105172521-4720035b7bfd/go.mod h1:HHNXQzUsZCxOoE+CPiyCTO6x34Zs86zZUiwtpXoGdtg=
 github.com/btcsuite/goleveldb v0.0.0-20160330041536-7834afc9e8cd/go.mod h1:F+uVaaLLH7j4eDXPRvw78tMflu7Ie2bzYOH4Y8rRKBY=
@@ -1019,6 +1020,7 @@ github.com/syndtr/goleveldb v1.0.1-0.20190923125748-758128399b1d/go.mod h1:9OrXJ
 github.com/tchap/go-patricia v2.2.6+incompatible/go.mod h1:bmLyhP68RS6kStMGxByiQ23RP/odRBOTVjwp2cDyi6I=
 github.com/tmc/grpc-websocket-proxy v0.0.0-20170815181823-89b8d40f7ca8/go.mod h1:ncp9v5uamzpCO7NfCPTXjqaC+bZgJeR0sMTm6dMHP7U=
 github.com/tmc/grpc-websocket-proxy v0.0.0-20190109142713-0ad062ec5ee5/go.mod h1:ncp9v5uamzpCO7NfCPTXjqaC+bZgJeR0sMTm6dMHP7U=
+github.com/tyler-smith/go-bip39 v1.1.0 h1:5eUemwrMargf3BSLRRCalXT93Ns6pQJIjYQN2nyfOP8=
 github.com/tyler-smith/go-bip39 v1.1.0/go.mod h1:gUYDtqQw1JS3ZJ8UWVcGTGqqr6YIN3CWg+kkNaLt55U=
 github.com/ugorji/go v1.1.4/go.mod h1:uQMGLiO92mf5W77hV/PUCpI3pbzQx3CRekS0kk+RGrc=
 github.com/ugorji/go/codec v0.0.0-20181204163529-d75b2dcb6bc8/go.mod h1:VFNgLljTbGfSG7qAOspJ7OScBnGdDN/yBr0sguwnwf0=
@@ -1026,8 +1028,10 @@ github.com/umbracle/fastrlp v0.0.0-20210128110402-41364ca56ca8 h1:lWWKP+Oi7FSORl
 github.com/umbracle/fastrlp v0.0.0-20210128110402-41364ca56ca8/go.mod h1:z0AyVhz/7VbuYSaCB+tFgypZKD1DJL76ATih6XqFlig=
 github.com/umbracle/go-eth-bn256 v0.0.0-20190607160430-b36caf4e0f6b h1:t3nz9xXkLZJz+ZlTGFT3ixsCGO5AHx1Yift2EAfjnnc=
 github.com/umbracle/go-eth-bn256 v0.0.0-20190607160430-b36caf4e0f6b/go.mod h1:B2zj4f3YmUPeyCNSlAEgOf6tuGzeYKvIxAZzwy9PxPA=
-github.com/umbracle/go-web3 v0.0.0-20211122090728-2060f20426ca h1:tVwuXoSglW34pi21BagyDJGjeM2Q9dwJh+HPgmzEj60=
-github.com/umbracle/go-web3 v0.0.0-20211122090728-2060f20426ca/go.mod h1:ewphLEPDU44NJLSf5My9H367fW/qNksvjjKhWaS+2Dg=
+github.com/umbracle/go-web3 v0.0.0-20211208143243-0cb44c2e07c5 h1:3FQOt1eGdggdCK7du3Lvg1crHDsvEkMuR8hCrC5osZU=
+github.com/umbracle/go-web3 v0.0.0-20211208143243-0cb44c2e07c5/go.mod h1:ewphLEPDU44NJLSf5My9H367fW/qNksvjjKhWaS+2Dg=
+github.com/umbracle/go-web3 v0.0.0-20211208145232-a62dc1e205cc h1:pID3nYOlvNHpCwaNfmLSiJXjLitINdK6Z9ryWHv8qVk=
+github.com/umbracle/go-web3 v0.0.0-20211208145232-a62dc1e205cc/go.mod h1:ewphLEPDU44NJLSf5My9H367fW/qNksvjjKhWaS+2Dg=
 github.com/urfave/cli v0.0.0-20171014202726-7bc6a0acffa5/go.mod h1:70zkFmudgCuE/ngEzBv17Jvp/497gISqfk5gWijbERA=
 github.com/urfave/cli v1.20.0/go.mod h1:70zkFmudgCuE/ngEzBv17Jvp/497gISqfk5gWijbERA=
 github.com/urfave/cli v1.22.1/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=

@@ -1,7 +1,6 @@
 package polybft
 
 import (
-	"crypto/ecdsa"
 	"fmt"
 
 	"github.com/0xPolygon/polygon-sdk/consensus/polybft/proto"
@@ -10,16 +9,18 @@ import (
 	"github.com/0xPolygon/polygon-sdk/helper/keccak"
 	"github.com/0xPolygon/polygon-sdk/types"
 	"github.com/umbracle/fastrlp"
+	"github.com/umbracle/go-web3"
+	"github.com/umbracle/go-web3/wallet"
 )
 
 func commitMsg(b []byte) []byte {
 	// message that the nodes need to sign to commit to a block
 	// hash with COMMIT_MSG_CODE which is the same value used in quorum
-	return crypto.Keccak256(b, []byte{byte(proto.MessageReq_Commit)})
+	return web3.Keccak256(b, []byte{byte(proto.MessageReq_Commit)})
 }
 
 func ecrecoverImpl(sig, msg []byte) (types.Address, error) {
-	pub, err := crypto.RecoverPubkey(sig, crypto.Keccak256(msg))
+	pub, err := wallet.RecoverPubkey(sig, web3.Keccak256(msg))
 	if err != nil {
 		return types.Address{}, err
 	}
@@ -42,7 +43,7 @@ func ecrecoverFromHeader(h *types.Header) (types.Address, error) {
 	return ecrecoverImpl(extra.Seal, msg)
 }
 
-func signSealImpl(prv *ecdsa.PrivateKey, h *types.Header, committed bool) ([]byte, error) {
+func signSealImpl(prv web3.Key, h *types.Header, committed bool) ([]byte, error) {
 	hash, err := calculateHeaderHash(h)
 	if err != nil {
 		return nil, err
@@ -53,7 +54,7 @@ func signSealImpl(prv *ecdsa.PrivateKey, h *types.Header, committed bool) ([]byt
 	if committed {
 		msg = commitMsg(hash)
 	}
-	seal, err := crypto.Sign(prv, crypto.Keccak256(msg))
+	seal, err := prv.Sign(web3.Keccak256(msg))
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +62,7 @@ func signSealImpl(prv *ecdsa.PrivateKey, h *types.Header, committed bool) ([]byt
 	return seal, nil
 }
 
-func writeSeal(prv *ecdsa.PrivateKey, h *types.Header) (*types.Header, error) {
+func writeSeal(prv web3.Key, h *types.Header) (*types.Header, error) {
 	h = h.Copy()
 	seal, err := signSealImpl(prv, h, false)
 	if err != nil {
@@ -81,7 +82,7 @@ func writeSeal(prv *ecdsa.PrivateKey, h *types.Header) (*types.Header, error) {
 	return h, nil
 }
 
-func writeCommittedSeal(prv *ecdsa.PrivateKey, h *types.Header) ([]byte, error) {
+func writeCommittedSeal(prv web3.Key, h *types.Header) ([]byte, error) {
 	return signSealImpl(prv, h, true)
 }
 
@@ -241,13 +242,13 @@ func validateMsg(msg *proto.MessageReq) error {
 	return nil
 }
 
-func signMsg(key *ecdsa.PrivateKey, msg *proto.MessageReq) error {
+func signMsg(key web3.Key, msg *proto.MessageReq) error {
 	signMsg, err := msg.PayloadNoSig()
 	if err != nil {
 		return err
 	}
 
-	sig, err := crypto.Sign(key, crypto.Keccak256(signMsg))
+	sig, err := key.Sign(web3.Keccak256(signMsg))
 	if err != nil {
 		return err
 	}

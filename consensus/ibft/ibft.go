@@ -22,6 +22,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/umbracle/go-web3"
 	"github.com/umbracle/go-web3/abi"
+	"github.com/umbracle/go-web3/wallet"
 	"google.golang.org/grpc"
 	goproto "google.golang.org/protobuf/proto"
 )
@@ -141,7 +142,7 @@ func Factory(
 
 	stdLogger := p.logger.StandardLogger(&hclog.StandardLoggerOptions{})
 
-	pp, err := polybft.NewPolyBFT(stdLogger, p.config.Path, polybft.NewKey(p.validatorKey.priv), p, p, &wrapTransport{network})
+	pp, err := polybft.NewPolyBFT(stdLogger, p.config.Path, wallet.NewKey(p.validatorKey.priv), p, p, &wrapTransport{network})
 	if err != nil {
 		panic(err)
 	}

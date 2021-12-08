@@ -2,17 +2,15 @@ package polybft
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"encoding/hex"
 	"fmt"
 	"log"
 
-	"github.com/0xPolygon/polygon-sdk/consensus/polybft/proto"
 	"github.com/0xPolygon/polygon-sdk/contracts2"
-	"github.com/0xPolygon/polygon-sdk/crypto"
 	"github.com/0xPolygon/polygon-sdk/types"
 
 	"github.com/0xPolygon/pbft-consensus"
+	"github.com/0xPolygon/polygon-sdk/consensus/polybft/proto"
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/umbracle/go-web3"
 	"github.com/umbracle/go-web3/abi"
@@ -35,46 +33,16 @@ type PolyBFT struct {
 	Backend Backend
 	network Transport
 
-	key *key
+	key web3.Key
 
 	path string
-}
-
-type key struct {
-	priv *ecdsa.PrivateKey
-	addr types.Address
-}
-
-func (k *key) String() string {
-	return k.addr.String()
-}
-
-func (k *key) NodeID() pbft.NodeID {
-	return pbft.NodeID(k.addr.String())
-}
-
-func (k *key) Sign(b []byte) ([]byte, error) {
-	// TODO
-	seal, err := crypto.Sign(k.priv, crypto.Keccak256(b))
-	if err != nil {
-		return nil, err
-	}
-	return seal, nil
-}
-
-func NewKey(priv *ecdsa.PrivateKey) *key {
-	k := &key{
-		priv: priv,
-		addr: crypto.PubKeyToAddress(&priv.PublicKey),
-	}
-	return k
 }
 
 type Executor interface {
 	Call(parent *types.Header, to types.Address, data []byte) ([]byte, error)
 }
 
-func NewPolyBFT(logger *log.Logger, path string, key *key, Executor Executor, Backend Backend, network Transport) (*PolyBFT, error) {
+func NewPolyBFT(logger *log.Logger, path string, key web3.Key, Executor Executor, Backend Backend, network Transport) (*PolyBFT, error) {
 	p := &PolyBFT{
 		logger:   logger,
 		Executor: Executor,
@@ -91,12 +59,28 @@ func NewPolyBFT(logger *log.Logger, path string, key *key, Executor Executor, Ba
 	}
 
 	p.pbft = pbft.New(
-		key,
+		&wrapKey{key},
 		&pbftTransport{topic},
 		pbft.WithLogger(logger),
 	)
 
 	return p, nil
+}
+
+type wrapKey struct {
+	k web3.Key
+}
+
+func (w *wrapKey) NodeID() pbft.NodeID {
+	return pbft.NodeID(w.k.Address().String())
+}
+
+func (w *wrapKey) Sign(b []byte) ([]byte, error) {
+	return w.k.Sign(web3.Keccak256(b))
+}
+
+func (p *PolyBFT) NodeID() pbft.NodeID {
+	return pbft.NodeID(p.key.Address().String())
 }
 
 func (p *PolyBFT) VerifyHeader(header *types.Header) error {
@@ -124,7 +108,7 @@ func (p *PolyBFT) Finish(block *types.Block, validators []types.Address) error {
 	putIbftExtraValidators(header, validators)
 
 	// write the seal of the block after all the fields are completed
-	header, err := writeSeal(p.key.priv, block.Header)
+	header, err := writeSeal(p.key, block.Header)
 	if err != nil {
 		panic(err)
 	}
@@ -147,7 +131,7 @@ func (p *PolyBFT) IsValidator() bool {
 		}
 	*/
 
-	if dd.Includes(pbft.NodeID(p.key.addr.String())) {
+	if dd.Includes(p.NodeID()) {
 		// Do not need to do this since it will be done later
 		return true
 	}
@@ -197,7 +181,7 @@ func (p *PolyBFT) setupTransport() (Topic, error) {
 	err = topic.Subscribe(func(obj interface{}) {
 		msg := obj.(*proto.MessageReq)
 
-		if msg.From == string(p.key.NodeID()) {
+		if msg.From == string(p.NodeID()) {
 			// we are the sender, skip this message since we already
 			// relay our own messages internally.
 			return
@@ -274,7 +258,7 @@ func (p *PolyBFT) setupBridge() error {
 	if err := tr.init(); err != nil {
 		return err
 	}
-	p.pool = NewMessagePool(p.logger, pbft.NodeID(p.key.String()), tr)
+	p.pool = NewMessagePool(p.logger, p.NodeID(), tr)
 
 	// NOTE: We need to initialize the pool because it will discard any messages that are not
 	// in the validator set and at this point it does not have validator set.
@@ -338,7 +322,7 @@ func (p *PolyBFT) setupBridge() error {
 						}
 						p.pool.Add(&Message{
 							Data: data,
-							From: p.key.NodeID(),
+							From: p.NodeID(),
 						}, true)
 					}
 				case <-tt.DoneCh:

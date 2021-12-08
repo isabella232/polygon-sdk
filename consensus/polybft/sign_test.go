@@ -1,24 +1,23 @@
 package polybft
 
 import (
-	"crypto/ecdsa"
 	"strconv"
 	"testing"
 
 	"github.com/0xPolygon/polygon-sdk/chain"
 	"github.com/0xPolygon/polygon-sdk/consensus/polybft/proto"
-	"github.com/0xPolygon/polygon-sdk/crypto"
 	"github.com/0xPolygon/polygon-sdk/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/umbracle/go-web3/wallet"
 )
 
 type testerAccount struct {
 	alias string
-	priv  *ecdsa.PrivateKey
+	priv  *wallet.Key
 }
 
 func (t *testerAccount) Address() types.Address {
-	return crypto.PubKeyToAddress(&t.priv.PublicKey)
+	return types.Address(t.priv.Address())
 }
 
 func (t *testerAccount) sign(h *types.Header) *types.Header {
@@ -36,7 +35,7 @@ func newTesterAccountPool(num ...int) *testerAccountPool {
 	}
 	if len(num) == 1 {
 		for i := 0; i < num[0]; i++ {
-			key, _ := crypto.GenerateKey()
+			key, _ := wallet.GenerateKey()
 			t.accounts = append(t.accounts, &testerAccount{
 				alias: strconv.Itoa(i),
 				priv:  key,
@@ -51,7 +50,7 @@ func (ap *testerAccountPool) add(accounts ...string) {
 		if acct := ap.get(account); acct != nil {
 			continue
 		}
-		priv, err := crypto.GenerateKey()
+		priv, err := wallet.GenerateKey()
 		if err != nil {
 			panic("BUG: Failed to generate crypto key")
 		}
