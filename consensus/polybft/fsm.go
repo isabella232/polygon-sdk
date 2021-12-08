@@ -7,7 +7,6 @@ import (
 
 	"github.com/0xPolygon/pbft-consensus"
 	"github.com/0xPolygon/polygon-sdk/contracts2"
-	"github.com/0xPolygon/polygon-sdk/state"
 	"github.com/0xPolygon/polygon-sdk/types"
 	"github.com/umbracle/go-web3"
 	"github.com/umbracle/go-web3/abi"
@@ -15,12 +14,17 @@ import (
 
 var stateSyncEvent = abi.MustNewEvent(`event Transfer(address token, address to, uint256 amount)`)
 
+type StateTransaction struct {
+	To    types.Address
+	Input []byte
+}
+
 // This should be the interface we require from the outside
 type Backend interface {
 	InsertBlock(b *types.Block) error
 	Header() *types.Header
 	IsStuck() (uint64, bool)
-	BuildBlock(parent *types.Header, validators []types.Address, handler func(t *state.Transition) []*types.Transaction) (*types.Block, error)
+	BuildBlock(parent *types.Header, validators []types.Address, transactions []*StateTransaction) (*types.Block, error)
 }
 
 type fsm2 struct {
@@ -48,8 +52,6 @@ func (f *fsm2) init() error {
 	return nil
 }
 
-const epochSize = 10
-
 func (f *fsm2) isEndOfEpoch() bool {
 	return f.Height()%10 == 0
 }
@@ -66,10 +68,8 @@ func (f *fsm2) BuildProposal() (*pbft.Proposal, error) {
 	// 3. A MIX OF BOTH, WE HAVE A GENERIC FUNCTION CALLED GETSTATETXNS() THAT RETURNS ALL THE STATE TRANSACTIONS
 	//    DURING THE VALIDATION STAGE, WE CHECK THAT ALL THIS TRANSACTIONS ARE INCLUDED IN THE LOCKED BLOCK.
 
-	block, err := f.b.BuildBlock(f.parent, f.validators, func(v *state.Transition) (txns []*types.Transaction) {
-		if !f.isEndOfEpoch() {
-			return
-		}
+	txns := []*StateTransaction{}
+	if f.isEndOfEpoch() {
 
 		// V3NOTE: If we are at the end of the epoch we try to:
 		// 1. fit as many state sync as possible from the pool
@@ -114,20 +114,27 @@ func (f *fsm2) BuildProposal() (*pbft.Proposal, error) {
 			}
 
 			tokenAddr := types.StringToAddress(tokenAddrRaw.String())
-			transaction := &types.Transaction{
-				Input:    input,
-				To:       &tokenAddr,
-				Value:    big.NewInt(0),
-				GasPrice: big.NewInt(0),
-			}
+
+			/*
+				transaction := &types.Transaction{
+					Input:    input,
+					To:       &tokenAddr,
+					Value:    big.NewInt(0),
+					GasPrice: big.NewInt(0),
+				}
+			*/
+
 			fmt.Printf("---> STATE SYNC CONTRACT: %s %s %d\n", tokenAddr, toAddr, amount)
 
 			// V3NOTE: IMPORTANT FOR THIS THINGS TO USE WRITE() BECAUSE THIS FUNCTION WILL INTERNALLY HANDLE EVERYTHING
 			// OF STATESYNC FUNCTIONS. OTHERWISE, YOU MIGHT MISS SOME THINGS THAT ARE PART OF THE CONSENSUS AS WELL.
-			if err := v.Write(transaction); err != nil {
-				panic(err)
-			}
-			txns = append(txns, transaction)
+			//if err := v.Write(transaction); err != nil {
+			//	panic(err)
+			//}
+			txns = append(txns, &StateTransaction{
+				Input: input,
+				To:    tokenAddr,
+			})
 		}
 
 		// 2. update the validator set.
@@ -143,22 +150,28 @@ func (f *fsm2) BuildProposal() (*pbft.Proposal, error) {
 			if err != nil {
 				panic(err)
 			}
-			transaction := &types.Transaction{
-				Input:    input,
-				To:       &contracts2.ValidatorContractAddr,
-				Value:    big.NewInt(0),
-				GasPrice: big.NewInt(0),
-			}
+			/*
+				transaction := &types.Transaction{
+					Input:    input,
+					To:       &contracts2.ValidatorContractAddr,
+					Value:    big.NewInt(0),
+					GasPrice: big.NewInt(0),
+				}
+			*/
 			fmt.Println("---> UPDATE VALIDATOR SET <---")
 
-			if err := v.Write(transaction); err != nil {
-				panic(err)
-			}
-			txns = append(txns, transaction)
+			//	if err := v.Write(transaction); err != nil {
+			//		panic(err)
+			//	}
+			txns = append(txns, &StateTransaction{
+				Input: input,
+				To:    contracts2.ValidatorContractAddr,
+			})
 		}
 
-		return
-	})
+	}
+
+	block, err := f.b.BuildBlock(f.parent, f.validators, txns)
 	if err != nil {
 		panic(err)
 	}

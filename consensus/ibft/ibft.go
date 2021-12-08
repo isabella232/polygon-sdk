@@ -198,8 +198,8 @@ func (i *Ibft) IsStuck() (uint64, bool) {
 	return 0, false
 }
 
-func (i *Ibft) BuildBlock(parent *types.Header, validators []types.Address, handler func(t *state.Transition) []*types.Transaction) (*types.Block, error) {
-	return i.buildBlock(parent, validators, handler)
+func (i *Ibft) BuildBlock(parent *types.Header, validators []types.Address, transactions []*polybft.StateTransaction) (*types.Block, error) {
+	return i.buildBlock(parent, validators, transactions)
 }
 
 // Start starts the IBFT consensus
@@ -413,7 +413,7 @@ func (i *Ibft) runSyncState() {
 var defaultBlockPeriod = 2 * time.Second
 
 // buildBlock builds the block, based on the passed in snapshot and parent header
-func (i *Ibft) buildBlock(parent *types.Header, validators []types.Address, handler func(t *state.Transition) []*types.Transaction) (*types.Block, error) {
+func (i *Ibft) buildBlock(parent *types.Header, validators []types.Address, stateTxns []*polybft.StateTransaction) (*types.Block, error) {
 	header := &types.Header{
 		ParentHash: parent.Hash,
 		Number:     parent.Number + 1,
@@ -474,8 +474,19 @@ func (i *Ibft) buildBlock(parent *types.Header, validators []types.Address, hand
 	// V3Notes: This does not take into account many things like:
 	// 1. Do we have enough gas to make this post hooks?
 	// 2. Should we send state txns first?
-	stateTxns := handler(transition)
-	txns = append(txns, stateTxns...)
+	// V3. Apply all the state transactions
+	for _, txn := range stateTxns {
+		transaction := &types.Transaction{
+			Input:    txn.Input,
+			To:       &txn.To,
+			Value:    big.NewInt(0),
+			GasPrice: big.NewInt(0),
+		}
+		if err := transition.Write(transaction); err != nil {
+			panic(err)
+		}
+		txns = append(txns, transaction)
+	}
 
 	_, root := transition.Commit()
 	header.StateRoot = root
