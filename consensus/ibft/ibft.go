@@ -9,9 +9,6 @@ import (
 	"time"
 
 	"github.com/0xPolygon/pbft-consensus"
-	"github.com/umbracle/go-web3"
-	"github.com/umbracle/go-web3/abi"
-
 	"github.com/0xPolygon/polygon-sdk/blockchain"
 	"github.com/0xPolygon/polygon-sdk/consensus"
 	"github.com/0xPolygon/polygon-sdk/consensus/polybft"
@@ -23,7 +20,10 @@ import (
 	"github.com/0xPolygon/polygon-sdk/txpool"
 	"github.com/0xPolygon/polygon-sdk/types"
 	"github.com/hashicorp/go-hclog"
+	"github.com/umbracle/go-web3"
+	"github.com/umbracle/go-web3/abi"
 	"google.golang.org/grpc"
+	goproto "google.golang.org/protobuf/proto"
 )
 
 const (
@@ -141,13 +141,56 @@ func Factory(
 
 	stdLogger := p.logger.StandardLogger(&hclog.StandardLoggerOptions{})
 
-	pp, err := polybft.NewPolyBFT(stdLogger, p.config.Path, polybft.NewKey(p.validatorKey.priv), executor, p, network)
+	pp, err := polybft.NewPolyBFT(stdLogger, p.config.Path, polybft.NewKey(p.validatorKey.priv), p, p, &wrapTransport{network})
 	if err != nil {
 		panic(err)
 	}
 	p.polybft = pp
 
 	return p, nil
+}
+
+type wrapTransport struct {
+	t *network.Server
+}
+
+func (w *wrapTransport) NewTopic(typ string, obj goproto.Message) (polybft.Topic, error) {
+	t, err := w.t.NewTopic(typ, obj)
+	if err != nil {
+		return nil, err
+	}
+	return &wrapTopic{t}, nil
+}
+
+type wrapTopic struct {
+	t *network.Topic
+}
+
+func (w *wrapTopic) Publish(obj goproto.Message) error {
+	return w.t.Publish(obj)
+}
+
+func (w *wrapTopic) Subscribe(handler func(interface{})) error {
+	w.t.Subscribe(handler)
+	return nil
+}
+
+func (i *Ibft) Call(parent *types.Header, to types.Address, data []byte) ([]byte, error) {
+
+	tt, err := i.executor.BeginTxn(parent.StateRoot, parent, types.Address{})
+	if err != nil {
+		panic(err)
+	}
+
+	txn := &types.Transaction{
+		GasPrice: big.NewInt(100),
+		Gas:      parent.GasLimit,
+		To:       &contracts2.ValidatorContractAddr,
+		Value:    big.NewInt(0),
+		Input:    data,
+	}
+	res := tt.ApplyInt(parent.GasLimit, txn)
+	return res.ReturnValue, nil
 }
 
 func (i *Ibft) Header() *types.Header {

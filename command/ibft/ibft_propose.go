@@ -1,12 +1,9 @@
 package ibft
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/0xPolygon/polygon-sdk/command/helper"
-	"github.com/0xPolygon/polygon-sdk/consensus/ibft/proto"
-	ibftOp "github.com/0xPolygon/polygon-sdk/consensus/ibft/proto"
 	"github.com/0xPolygon/polygon-sdk/types"
 )
 
@@ -112,28 +109,30 @@ func (p *IbftPropose) Run(args []string) int {
 		p.UI.Error(err.Error())
 		return 1
 	}
+	fmt.Println(conn)
 
-	clt := ibftOp.NewIbftOperatorClient(conn)
-	req := &proto.Candidate{
-		Address: addr.String(),
-		Auth:    vote == positive,
-	}
+	/*
+		clt := ibftOp.NewIbftOperatorClient(conn)
+		req := &proto.Candidate{
+			Address: addr.String(),
+			Auth:    vote == positive,
+		}
 
-	_, err = clt.Propose(context.Background(), req)
-	if err != nil {
-		p.UI.Error(err.Error())
-		return 1
-	}
+		_, err = clt.Propose(context.Background(), req)
+		if err != nil {
+			p.UI.Error(err.Error())
+			return 1
+		}
 
-	output := "\n[IBFT PROPOSE]\n"
+		output := "\n[IBFT PROPOSE]\n"
 
-	if vote == positive {
-		output += fmt.Sprintf("Successfully voted for the addition of address [%s] to the validator set\n", ethAddress)
-	} else {
-		output += fmt.Sprintf("Successfully voted for the removal of validator at address [%s] from the validator set\n", ethAddress)
-	}
+		if vote == positive {
+			output += fmt.Sprintf("Successfully voted for the addition of address [%s] to the validator set\n", ethAddress)
+		} else {
+			output += fmt.Sprintf("Successfully voted for the removal of validator at address [%s] from the validator set\n", ethAddress)
+		}
 
-	p.UI.Info(output)
-
+		p.UI.Info(output)
+	*/
 	return 0
 }

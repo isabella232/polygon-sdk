@@ -1,12 +1,9 @@
 package ibft
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/0xPolygon/polygon-sdk/command/helper"
-	ibftOp "github.com/0xPolygon/polygon-sdk/consensus/ibft/proto"
-	empty "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // IbftStatus is the command to query the snapshot
@@ -49,22 +46,25 @@ func (p *IbftStatus) Run(args []string) int {
 		p.UI.Error(err.Error())
 		return 1
 	}
+	fmt.Println(conn)
 
-	clt := ibftOp.NewIbftOperatorClient(conn)
-	resp, err := clt.Status(context.Background(), &empty.Empty{})
-	if err != nil {
-		p.UI.Error(err.Error())
-		return 1
-	}
+	/*
+		clt := ibftOp.NewIbftOperatorClient(conn)
+		resp, err := clt.Status(context.Background(), &empty.Empty{})
+		if err != nil {
+			p.UI.Error(err.Error())
+			return 1
+		}
 
-	var output = "\n[VALIDATOR STATUS]\n"
-	output += helper.FormatKV([]string{
-		fmt.Sprintf("Vaidator key|%s", resp.Key),
-	})
+		var output = "\n[VALIDATOR STATUS]\n"
+		output += helper.FormatKV([]string{
+			fmt.Sprintf("Vaidator key|%s", resp.Key),
+		})
 
-	output += "\n"
+		output += "\n"
 
-	p.UI.Output(output)
+		p.UI.Output(output)
+	*/
 
 	return 0
 }

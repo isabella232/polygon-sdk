@@ -1,12 +1,9 @@
 package ibft
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/0xPolygon/polygon-sdk/command/helper"
-	"github.com/0xPolygon/polygon-sdk/consensus/ibft/proto"
-	ibftOp "github.com/0xPolygon/polygon-sdk/consensus/ibft/proto"
 )
 
 // IbftSnapshot is the command to query the snapshot
@@ -71,25 +68,30 @@ func (p *IbftSnapshot) Run(args []string) int {
 		p.UI.Error(err.Error())
 		return 1
 	}
+	fmt.Println(conn)
 
-	req := &proto.SnapshotReq{}
-	if number >= 0 {
-		req.Number = uint64(number)
-	} else {
-		req.Latest = true
-	}
+	/*
+		req := &proto.SnapshotReq{}
+		if number >= 0 {
+			req.Number = uint64(number)
+		} else {
+			req.Latest = true
+		}
 
-	clt := ibftOp.NewIbftOperatorClient(conn)
-	resp, err := clt.GetSnapshot(context.Background(), req)
-	if err != nil {
-		p.UI.Error(err.Error())
-		return 1
-	}
+		clt := ibftOp.NewIbftOperatorClient(conn)
+		resp, err := clt.GetSnapshot(context.Background(), req)
+		if err != nil {
+			p.UI.Error(err.Error())
+			return 1
+		}
 
-	p.UI.Output(printSnapshot(resp))
+		p.UI.Output(printSnapshot(resp))
+	*/
+
 	return 0
 }
 
+/*
 func printSnapshot(s *proto.Snapshot) (output string) {
 	output += "\n[IBFT SNAPSHOT]\n"
 	output += helper.FormatKV([]string{
@@ -131,3 +133,4 @@ func printSnapshot(s *proto.Snapshot) (output string) {
 
 	return output
 }
+*/

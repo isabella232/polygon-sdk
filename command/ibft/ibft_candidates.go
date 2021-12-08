@@ -1,12 +1,9 @@
 package ibft
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/0xPolygon/polygon-sdk/command/helper"
-	ibftOp "github.com/0xPolygon/polygon-sdk/consensus/ibft/proto"
-	empty "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // IbftCandidates is the command to query the snapshot
@@ -48,31 +45,35 @@ func (p *IbftCandidates) Run(args []string) int {
 		p.UI.Error(err.Error())
 		return 1
 	}
+	fmt.Println(conn)
 
-	clt := ibftOp.NewIbftOperatorClient(conn)
-	resp, err := clt.Candidates(context.Background(), &empty.Empty{})
-	if err != nil {
-		p.UI.Error(err.Error())
-		return 1
-	}
+	/*
+		clt := ibftOp.NewIbftOperatorClient(conn)
+		resp, err := clt.Candidates(context.Background(), &empty.Empty{})
+		if err != nil {
+			p.UI.Error(err.Error())
+			return 1
+		}
 
-	output := "\n[IBFT CANDIDATES]\n"
+		output := "\n[IBFT CANDIDATES]\n"
 
-	if len(resp.Candidates) == 0 {
-		output += "No candidates found"
-	} else {
-		output += fmt.Sprintf("Number of candidates: %d\n\n", len(resp.Candidates))
+		if len(resp.Candidates) == 0 {
+			output += "No candidates found"
+		} else {
+			output += fmt.Sprintf("Number of candidates: %d\n\n", len(resp.Candidates))
 
-		output += formatCandidates(resp.Candidates)
-	}
+			output += formatCandidates(resp.Candidates)
+		}
 
-	output += "\n"
+		output += "\n"
 
-	p.UI.Output(output)
+		p.UI.Output(output)
+	*/
 
 	return 0
 }
 
+/*
 func formatCandidates(candidates []*ibftOp.Candidate) string {
 	var generatedCandidates []string
 
@@ -92,3 +93,4 @@ func voteToString(vote bool) string {
 
 	return "REMOVE"
 }
+*/

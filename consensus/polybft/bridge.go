@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	"github.com/0xPolygon/polygon-sdk/consensus/polybft/proto"
-	"github.com/0xPolygon/polygon-sdk/network"
 	"github.com/golang/protobuf/ptypes/any"
 )
 
@@ -13,7 +12,7 @@ const messagePoolProto = "/pool/0.1"
 type messagePoolTransport struct {
 	i *PolyBFT
 
-	topic *network.Topic
+	topic Topic
 }
 
 func (m *messagePoolTransport) init() error {

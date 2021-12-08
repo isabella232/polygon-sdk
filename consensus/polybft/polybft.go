@@ -6,13 +6,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
-	"math/big"
 
 	"github.com/0xPolygon/polygon-sdk/consensus/polybft/proto"
 	"github.com/0xPolygon/polygon-sdk/contracts2"
 	"github.com/0xPolygon/polygon-sdk/crypto"
-	"github.com/0xPolygon/polygon-sdk/network"
-	"github.com/0xPolygon/polygon-sdk/state"
 	"github.com/0xPolygon/polygon-sdk/types"
 
 	"github.com/0xPolygon/pbft-consensus"
@@ -33,10 +30,10 @@ type PolyBFT struct {
 	// message pool
 	pool *MessagePool
 
-	Executor *state.Executor
+	Executor Executor
 
 	Backend Backend
-	network *network.Server
+	network Transport
 
 	key *key
 
@@ -73,7 +70,11 @@ func NewKey(priv *ecdsa.PrivateKey) *key {
 	return k
 }
 
-func NewPolyBFT(logger *log.Logger, path string, key *key, Executor *state.Executor, Backend Backend, network *network.Server) (*PolyBFT, error) {
+type Executor interface {
+	Call(parent *types.Header, to types.Address, data []byte) ([]byte, error)
+}
+
+func NewPolyBFT(logger *log.Logger, path string, key *key, Executor Executor, Backend Backend, network Transport) (*PolyBFT, error) {
 	p := &PolyBFT{
 		logger:   logger,
 		Executor: Executor,
@@ -185,7 +186,7 @@ func (p *PolyBFT) Run(parent *types.Header) {
 var ibftProto = "/ibft/0.1"
 
 // setupTransport sets up the gossip transport protocol
-func (p *PolyBFT) setupTransport() (*network.Topic, error) {
+func (p *PolyBFT) setupTransport() (Topic, error) {
 	// Define a new topic
 	topic, err := p.network.NewTopic(ibftProto, &proto.MessageReq{})
 	if err != nil {
@@ -221,7 +222,7 @@ func (p *PolyBFT) setupTransport() (*network.Topic, error) {
 }
 
 type pbftTransport struct {
-	topic *network.Topic
+	topic Topic
 }
 
 func (p *pbftTransport) Gossip(msg *pbft.MessageReq) error {
@@ -247,21 +248,12 @@ func (p *PolyBFT) getValidators(parent *types.Header) []types.Address {
 		panic(err)
 	}
 
-	tt, err := p.Executor.BeginTxn(parent.StateRoot, parent, types.Address{})
+	returnValue, err := p.Executor.Call(parent, contracts2.ValidatorContractAddr, xx.Methods["getValidators"].ID())
 	if err != nil {
 		panic(err)
 	}
 
-	txn := &types.Transaction{
-		GasPrice: big.NewInt(100),
-		Gas:      parent.GasLimit,
-		To:       &contracts2.ValidatorContractAddr,
-		Value:    big.NewInt(0),
-		Input:    xx.Methods["getValidators"].ID(),
-	}
-	res := tt.ApplyInt(parent.GasLimit, txn)
-
-	raw, err := xx.Methods["getValidators"].Decode(res.ReturnValue)
+	raw, err := xx.Methods["getValidators"].Decode(returnValue)
 	if err != nil {
 		panic(err)
 	}
