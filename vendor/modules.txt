@@ -366,7 +366,7 @@ github.com/umbracle/fastrlp
 # github.com/umbracle/go-eth-bn256 v0.0.0-20190607160430-b36caf4e0f6b
 ## explicit
 github.com/umbracle/go-eth-bn256
-# github.com/umbracle/go-web3 v0.0.0-20211208145232-a62dc1e205cc
+# github.com/umbracle/go-web3 v0.0.0-20211210100813-f99eda2163c3
 ## explicit
 github.com/umbracle/go-web3
 github.com/umbracle/go-web3/abi

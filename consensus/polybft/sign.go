@@ -30,7 +30,7 @@ func ecrecoverImpl(sig, msg []byte) (types.Address, error) {
 
 func ecrecoverFromHeader(h *types.Header) (types.Address, error) {
 	// get the extra part that contains the seal
-	extra, err := getIbftExtra(h)
+	extra, err := GetIbftExtra(h)
 	if err != nil {
 		return types.Address{}, err
 	}
@@ -69,7 +69,7 @@ func writeSeal(prv web3.Key, h *types.Header) (*types.Header, error) {
 		return nil, err
 	}
 
-	extra, err := getIbftExtra(h)
+	extra, err := GetIbftExtra(h)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func writeCommittedSeals(h *types.Header, seals [][]byte) (*types.Header, error)
 		}
 	}
 
-	extra, err := getIbftExtra(h)
+	extra, err := GetIbftExtra(h)
 	if err != nil {
 		return nil, err
 	}
@@ -123,14 +123,14 @@ func calculateHeaderHash(h *types.Header) ([]byte, error) {
 
 	// when hashing the block for signing we have to remove from
 	// the extra field the seal and committed seal items
-	extra, err := getIbftExtra(h)
+	extra, err := GetIbftExtra(h)
 	if err != nil {
 		return nil, err
 	}
 
 	// This will effectively remove the Seal and Commited Seal fields, while keeping proposer vanity and validator set
 	// 		because extra.Validators is what we got from `h` in the first place.
-	putIbftExtraValidators(h, extra.Validators)
+	PutIbftExtraValidators(h, extra.Validators)
 
 	vv := arena.NewArray()
 	vv.Set(arena.NewBytes(h.ParentHash.Bytes()))
@@ -167,7 +167,7 @@ func verifySigner(snap ValidatorSet, header *types.Header) error {
 
 // verifyCommitedFields is checking for consensus proof in the header
 func verifyCommitedFields(snap ValidatorSet, header *types.Header) error {
-	extra, err := getIbftExtra(header)
+	extra, err := GetIbftExtra(header)
 	if err != nil {
 		return err
 	}

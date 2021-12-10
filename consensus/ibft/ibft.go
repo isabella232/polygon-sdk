@@ -184,6 +184,15 @@ func (w *wrapTopic) Subscribe(handler func(interface{})) error {
 	return nil
 }
 
+func (i *Ibft) Hash(p []byte) ([]byte, error) {
+	block := &types.Block{}
+	if err := block.UnmarshalRLP(p); err != nil {
+		panic(err)
+	}
+	hash := polyBFTHeaderHash(block.Header)
+	return hash.Bytes(), nil
+}
+
 func (i *Ibft) Call(parent *types.Header, to types.Address, data []byte) ([]byte, error) {
 
 	tt, err := i.executor.BeginTxn(parent.StateRoot, parent, types.Address{})

@@ -201,12 +201,12 @@ func (c *GenesisCommand) Run(args []string) int {
 		}
 
 		// create the initial extra data with the validators
-		ibftExtra := &polybft.IstanbulExtra{
+		ibftExtra := &polybft.Extra{
 			Validators:    validators,
 			Seal:          []byte{},
 			CommittedSeal: [][]byte{},
 		}
-		extraData = make([]byte, polybft.IstanbulExtraVanity)
+		extraData = make([]byte, polybft.ExtraVanity)
 		extraData = ibftExtra.MarshalRLPTo(extraData)
 	}
 

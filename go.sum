@@ -1032,6 +1032,8 @@ github.com/umbracle/go-web3 v0.0.0-20211208143243-0cb44c2e07c5 h1:3FQOt1eGdggdCK
 github.com/umbracle/go-web3 v0.0.0-20211208143243-0cb44c2e07c5/go.mod h1:ewphLEPDU44NJLSf5My9H367fW/qNksvjjKhWaS+2Dg=
 github.com/umbracle/go-web3 v0.0.0-20211208145232-a62dc1e205cc h1:pID3nYOlvNHpCwaNfmLSiJXjLitINdK6Z9ryWHv8qVk=
 github.com/umbracle/go-web3 v0.0.0-20211208145232-a62dc1e205cc/go.mod h1:ewphLEPDU44NJLSf5My9H367fW/qNksvjjKhWaS+2Dg=
+github.com/umbracle/go-web3 v0.0.0-20211210100813-f99eda2163c3 h1:4glSZnZSUku89JctWmQdIoPSuFa4tEBrspXiHNewEkk=
+github.com/umbracle/go-web3 v0.0.0-20211210100813-f99eda2163c3/go.mod h1:ewphLEPDU44NJLSf5My9H367fW/qNksvjjKhWaS+2Dg=
 github.com/urfave/cli v0.0.0-20171014202726-7bc6a0acffa5/go.mod h1:70zkFmudgCuE/ngEzBv17Jvp/497gISqfk5gWijbERA=
 github.com/urfave/cli v1.20.0/go.mod h1:70zkFmudgCuE/ngEzBv17Jvp/497gISqfk5gWijbERA=
 github.com/urfave/cli v1.22.1/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=

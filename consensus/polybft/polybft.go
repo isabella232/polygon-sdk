@@ -98,7 +98,7 @@ func (p *PolyBFT) NodeID() pbft.NodeID {
 
 func (p *PolyBFT) VerifyHeader(header *types.Header) error {
 	// ensure the extra data is correctly formatted
-	if _, err := getIbftExtra(header); err != nil {
+	if _, err := GetIbftExtra(header); err != nil {
 		return err
 	}
 
@@ -118,7 +118,7 @@ func (p *PolyBFT) Finish(block *types.Block, validators []types.Address) error {
 	header.MixHash = IstanbulDigest
 
 	// we need to include in the extra field the current set of validators
-	putIbftExtraValidators(header, validators)
+	PutIbftExtraValidators(header, validators)
 
 	// write the seal of the block after all the fields are completed
 	header, err := writeSeal(p.key, block.Header)

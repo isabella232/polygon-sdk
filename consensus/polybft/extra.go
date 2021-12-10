@@ -29,7 +29,7 @@ type Extra struct {
 var zeroBytes = make([]byte, 32)
 
 // putIbftExtraValidators is a helper method that adds validators to the extra field in the header
-func putIbftExtraValidators(h *types.Header, validators []types.Address) {
+func PutIbftExtraValidators(h *types.Header, validators []types.Address) {
 	// Pad zeros to the right up to istanbul vanity
 	extra := h.ExtraData
 	if len(extra) < ExtraVanity {
@@ -66,7 +66,7 @@ func PutIbftExtra(h *types.Header, Extra *Extra) error {
 }
 
 // getIbftExtra returns the istanbul extra data field from the passed in header
-func getIbftExtra(h *types.Header) (*Extra, error) {
+func GetIbftExtra(h *types.Header) (*Extra, error) {
 	if len(h.ExtraData) < ExtraVanity {
 		return nil, fmt.Errorf("wrong extra size: %d", len(h.ExtraData))
 	}

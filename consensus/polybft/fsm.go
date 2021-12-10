@@ -24,11 +24,15 @@ type Backend interface {
 	Header() *types.Header
 	IsStuck() (uint64, bool)
 	BuildBlock(parent *types.Header, validators []types.Address, transactions []*StateTransaction) (*types.Block, error)
+	Hash(p []byte) ([]byte, error)
 }
 
 type fsm2 struct {
 	p *PolyBFT
 	b Backend
+
+	// this is the hash of the block, the thing we sign
+	hash []byte
 
 	stateTransactions []*StateTransaction
 	parent            *types.Header
@@ -38,6 +42,9 @@ type fsm2 struct {
 
 func (f *fsm2) init() error {
 	f.validators = f.p.getValidators(f.parent) // this should be done before
+
+	fmt.Println("-- vv --")
+	fmt.Println(f.validators)
 
 	var err error
 
@@ -167,10 +174,8 @@ func (f *fsm2) isEndOfEpoch() bool {
 	return f.Height()%10 == 0
 }
 
-type blockBuilder struct {
-}
-
 func (f *fsm2) BuildProposal() (*pbft.Proposal, error) {
+	// THIS IS PART OF ACCETSTATE, THE PART THAT WE RUN DURING THE PROPOSAL
 
 	// SEVERAL WAYS TO APPROACH THE PROBLEM OF SENDING CUSTOM TXNS TO THE CLIENT
 	// 1. WE EITHER LET THE PROPOSER CREATE THE TXNS AND SEND THEM TO THE VALIDATORS
@@ -192,10 +197,32 @@ func (f *fsm2) BuildProposal() (*pbft.Proposal, error) {
 		Time: time.Unix(int64(block.Header.Timestamp), 0),
 		Data: data,
 	}
+
+	// block builder comes here..
+	// this later on is differetnw ith the builder
+	// 1. get the hash
+	// 2. sign it
+	// 3. add the extra
+	// 4. include the hash in the proposal
+	hash, err := f.b.Hash(data)
+	if err != nil {
+		panic(err)
+	}
+	f.hash = hash
+	// 2. sign it and include validators
+
 	return proposal, nil
 }
 
 func (f *fsm2) Validate(proposal []byte) error {
+	// THIS IS PART OF ACCETSTATE, THE PART WE RUN DURING THE VALIDATION
+	// AT THIS POINT WE SHOULD GET THE PROPOSAL OBJECT TOO.
+
+	hash, err := f.b.Hash(proposal)
+	if err != nil {
+		panic(err)
+	}
+	f.hash = hash
 
 	// TODO: we need to validate the state transactions
 	// This is hard to do though since at th
@@ -204,6 +231,11 @@ func (f *fsm2) Validate(proposal []byte) error {
 }
 
 func (f *fsm2) Insert(p *pbft.SealedProposal) error {
+	// THIS DATA IS ALREADY IN AS PART OF THE VALIDATION STEP AND
+	// THE ACCEPT STATE
+	// IDEALLY, VALIDATION SHOULD ALREADY WRITE THE DATA AND VALIDATE ROOTS
+	// THEN, AT THIS POINT IT IS ONLY A MATTER OF INCLUDING THE COMMITED SEALS AND FINISH
+	// THIS IS, UPDATE THE EXTRA?
 
 	block := &types.Block{}
 	if err := block.UnmarshalRLP(p.Proposal); err != nil {
@@ -243,20 +275,31 @@ func (f *fsm2) ValidatorSet() pbft.ValidatorSet {
 }
 
 func (f *fsm2) Hash(p []byte) []byte {
-	block := &types.Block{}
-	if err := block.UnmarshalRLP(p); err != nil {
-		panic(err)
-	}
-	hash, err := calculateHeaderHash(block.Header)
-	if err != nil {
-		panic(err)
-	}
+	// THIS IS THE COMMIT SEAL
+
+	/*
+		hash, err := f.b.Hash(p)
+		if err != nil {
+			panic(err)
+		}
+	*/
+
+	/*
+		block := &types.Block{}
+		if err := block.UnmarshalRLP(p); err != nil {
+			panic(err)
+		}
+		hash, err := calculateHeaderHash(block.Header)
+		if err != nil {
+			panic(err)
+		}
+	*/
 
 	//fmt.Println("-- hash --")
 	//fmt.Println(block.Header)
 	//fmt.Println(hash)
 
-	msg := commitMsg(hash)
+	msg := commitMsg(f.hash)
 
 	//fmt.Println("-- msg --")
 	//fmt.Println(msg)

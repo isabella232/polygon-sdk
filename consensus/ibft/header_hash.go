@@ -1,6 +1,7 @@
-package polybft
+package ibft
 
 import (
+	"github.com/0xPolygon/polygon-sdk/consensus/polybft"
 	"github.com/0xPolygon/polygon-sdk/helper/keccak"
 	"github.com/0xPolygon/polygon-sdk/types"
 	"github.com/umbracle/fastrlp"
@@ -8,7 +9,7 @@ import (
 
 // istanbulHeaderHash defines the custom implementation for getting the header hash,
 // because of the extraData field
-func IstanbulHeaderHash(h *types.Header) types.Hash {
+func polyBFTHeaderHash(h *types.Header) types.Hash {
 	// this function replaces extra so we need to make a copy
 	h = h.Copy() // Remove later
 
@@ -17,11 +18,11 @@ func IstanbulHeaderHash(h *types.Header) types.Hash {
 
 	// when hashing the block for signing we have to remove from
 	// the extra field the seal and committed seal items
-	extra, err := GetIbftExtra(h)
+	extra, err := polybft.GetIbftExtra(h)
 	if err != nil {
 		return types.Hash{}
 	}
-	PutIbftExtraValidators(h, extra.Validators)
+	polybft.PutIbftExtraValidators(h, extra.Validators)
 
 	vv := arena.NewArray()
 	vv.Set(arena.NewBytes(h.ParentHash.Bytes()))
