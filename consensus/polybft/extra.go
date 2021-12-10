@@ -19,6 +19,13 @@ var (
 	ExtraSeal = 65
 )
 
+// Extra defines the structure of the extra field for Istanbul
+type Extra struct {
+	Validators    []types.Address
+	Seal          []byte
+	CommittedSeal [][]byte
+}
+
 var zeroBytes = make([]byte, 32)
 
 // putIbftExtraValidators is a helper method that adds validators to the extra field in the header
@@ -71,13 +78,6 @@ func getIbftExtra(h *types.Header) (*Extra, error) {
 	}
 
 	return extra, nil
-}
-
-// Extra defines the structure of the extra field for Istanbul
-type Extra struct {
-	Validators    []types.Address
-	Seal          []byte
-	CommittedSeal [][]byte
 }
 
 // MarshalRLPTo defines the marshal function wrapper for Extra

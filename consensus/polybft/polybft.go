@@ -26,7 +26,7 @@ type PolyBFT struct {
 	// pbft is the PBFT consensus engine
 	pbft *pbft.Pbft
 
-	// message pool
+	// pool is the message pool for the decentralized bridge
 	pool *MessagePool
 
 	Executor Executor

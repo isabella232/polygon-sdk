@@ -30,9 +30,10 @@ type fsm2 struct {
 	p *PolyBFT
 	b Backend
 
-	parent       *types.Header
-	validators   []types.Address
-	lastProposer types.Address
+	stateTransactions []*StateTransaction
+	parent            *types.Header
+	validators        []types.Address
+	lastProposer      types.Address
 }
 
 func (f *fsm2) init() error {
@@ -48,11 +49,125 @@ func (f *fsm2) init() error {
 		}
 	}
 	f.lastProposer = lastProposer
+
+	if err := f.buildStateTransactions(); err != nil {
+		panic(err)
+	}
+	return nil
+}
+
+func (f *fsm2) buildStateTransactions() error {
+	f.stateTransactions = []*StateTransaction{}
+
+	if !f.isEndOfEpoch() {
+		return nil
+	}
+
+	// V3NOTE: If we are at the end of the epoch we try to:
+	// 1. fit as many state sync as possible from the pool
+	// Create a transaction with the item, this will be special state transaction (for now)
+	// that does not check the sender.
+	for _, msg := range f.p.pool.GetReady() {
+		// convert msg into log
+		var log web3.Log
+		if err := log.UnmarshalJSON(msg.Data); err != nil {
+			panic(err)
+		}
+
+		fmt.Println("__ MSG __")
+		fmt.Println(msg)
+		fmt.Println(log)
+
+		// convert log into a transaction
+		vals, err := stateSyncEvent.ParseLog(&log)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("-- vals --")
+		fmt.Println(vals)
+
+		// address token, address to, uint256 amount
+		tokenAddrRaw := vals["token"].(web3.Address)
+		toAddr := vals["to"].(web3.Address)
+		amount := vals["amount"].(*big.Int)
+
+		// V3NOTE: THIS ONLY WORKS FOR NOW FOR ERC20 TOKENS. IT IS TRIVIAL TO DO IT FOR ARBITRARY VALUES LATER.
+		// This works but the abi from the abigen dont, figure it out. I think it has to be with the ... ternary ops
+		method, err := abi.NewMethod("function stateSync(address to, uint256 amount)")
+		if err != nil {
+			panic(err)
+		}
+		input, err := method.Encode(map[string]interface{}{
+			"to":     toAddr,
+			"amount": amount,
+		})
+		if err != nil {
+			panic(err)
+		}
+
+		tokenAddr := types.StringToAddress(tokenAddrRaw.String())
+
+		/*
+			transaction := &types.Transaction{
+				Input:    input,
+				To:       &tokenAddr,
+				Value:    big.NewInt(0),
+				GasPrice: big.NewInt(0),
+			}
+		*/
+
+		fmt.Printf("---> STATE SYNC CONTRACT: %s %s %d\n", tokenAddr, toAddr, amount)
+
+		// V3NOTE: IMPORTANT FOR THIS THINGS TO USE WRITE() BECAUSE THIS FUNCTION WILL INTERNALLY HANDLE EVERYTHING
+		// OF STATESYNC FUNCTIONS. OTHERWISE, YOU MIGHT MISS SOME THINGS THAT ARE PART OF THE CONSENSUS AS WELL.
+		//if err := v.Write(transaction); err != nil {
+		//	panic(err)
+		//}
+		f.stateTransactions = append(f.stateTransactions, &StateTransaction{
+			Input: input,
+			To:    tokenAddr,
+		})
+	}
+
+	// 2. update the validator set.
+	{
+		method, err := abi.NewMethod("function updateValidatorSet(bytes data)")
+		if err != nil {
+			// we can do this better
+			panic(err)
+		}
+		input, err := method.Encode(map[string]interface{}{
+			"data": []byte{},
+		})
+		if err != nil {
+			panic(err)
+		}
+		/*
+			transaction := &types.Transaction{
+				Input:    input,
+				To:       &contracts2.ValidatorContractAddr,
+				Value:    big.NewInt(0),
+				GasPrice: big.NewInt(0),
+			}
+		*/
+		fmt.Println("---> UPDATE VALIDATOR SET <---")
+
+		//	if err := v.Write(transaction); err != nil {
+		//		panic(err)
+		//	}
+		f.stateTransactions = append(f.stateTransactions, &StateTransaction{
+			Input: input,
+			To:    f.p.config.ValidatorContractAddr,
+		})
+	}
 	return nil
 }
 
 func (f *fsm2) isEndOfEpoch() bool {
 	return f.Height()%10 == 0
+}
+
+type blockBuilder struct {
 }
 
 func (f *fsm2) BuildProposal() (*pbft.Proposal, error) {
@@ -67,109 +182,7 @@ func (f *fsm2) BuildProposal() (*pbft.Proposal, error) {
 	// 3. A MIX OF BOTH, WE HAVE A GENERIC FUNCTION CALLED GETSTATETXNS() THAT RETURNS ALL THE STATE TRANSACTIONS
 	//    DURING THE VALIDATION STAGE, WE CHECK THAT ALL THIS TRANSACTIONS ARE INCLUDED IN THE LOCKED BLOCK.
 
-	txns := []*StateTransaction{}
-	if f.isEndOfEpoch() {
-
-		// V3NOTE: If we are at the end of the epoch we try to:
-		// 1. fit as many state sync as possible from the pool
-		// Create a transaction with the item, this will be special state transaction (for now)
-		// that does not check the sender.
-		for _, msg := range f.p.pool.GetReady() {
-			// convert msg into log
-			var log web3.Log
-			if err := log.UnmarshalJSON(msg.Data); err != nil {
-				panic(err)
-			}
-
-			fmt.Println("__ MSG __")
-			fmt.Println(msg)
-			fmt.Println(log)
-
-			// convert log into a transaction
-			vals, err := stateSyncEvent.ParseLog(&log)
-			if err != nil {
-				panic(err)
-			}
-			fmt.Println("-- vals --")
-			fmt.Println(vals)
-
-			// address token, address to, uint256 amount
-			tokenAddrRaw := vals["token"].(web3.Address)
-			toAddr := vals["to"].(web3.Address)
-			amount := vals["amount"].(*big.Int)
-
-			// V3NOTE: THIS ONLY WORKS FOR NOW FOR ERC20 TOKENS. IT IS TRIVIAL TO DO IT FOR ARBITRARY VALUES LATER.
-			// This works but the abi from the abigen dont, figure it out. I think it has to be with the ... ternary ops
-			method, err := abi.NewMethod("function stateSync(address to, uint256 amount)")
-			if err != nil {
-				panic(err)
-			}
-			input, err := method.Encode(map[string]interface{}{
-				"to":     toAddr,
-				"amount": amount,
-			})
-			if err != nil {
-				panic(err)
-			}
-
-			tokenAddr := types.StringToAddress(tokenAddrRaw.String())
-
-			/*
-				transaction := &types.Transaction{
-					Input:    input,
-					To:       &tokenAddr,
-					Value:    big.NewInt(0),
-					GasPrice: big.NewInt(0),
-				}
-			*/
-
-			fmt.Printf("---> STATE SYNC CONTRACT: %s %s %d\n", tokenAddr, toAddr, amount)
-
-			// V3NOTE: IMPORTANT FOR THIS THINGS TO USE WRITE() BECAUSE THIS FUNCTION WILL INTERNALLY HANDLE EVERYTHING
-			// OF STATESYNC FUNCTIONS. OTHERWISE, YOU MIGHT MISS SOME THINGS THAT ARE PART OF THE CONSENSUS AS WELL.
-			//if err := v.Write(transaction); err != nil {
-			//	panic(err)
-			//}
-			txns = append(txns, &StateTransaction{
-				Input: input,
-				To:    tokenAddr,
-			})
-		}
-
-		// 2. update the validator set.
-		{
-			method, err := abi.NewMethod("function updateValidatorSet(bytes data)")
-			if err != nil {
-				// we can do this better
-				panic(err)
-			}
-			input, err := method.Encode(map[string]interface{}{
-				"data": []byte{},
-			})
-			if err != nil {
-				panic(err)
-			}
-			/*
-				transaction := &types.Transaction{
-					Input:    input,
-					To:       &contracts2.ValidatorContractAddr,
-					Value:    big.NewInt(0),
-					GasPrice: big.NewInt(0),
-				}
-			*/
-			fmt.Println("---> UPDATE VALIDATOR SET <---")
-
-			//	if err := v.Write(transaction); err != nil {
-			//		panic(err)
-			//	}
-			txns = append(txns, &StateTransaction{
-				Input: input,
-				To:    f.p.config.ValidatorContractAddr,
-			})
-		}
-	}
-
-	block, err := f.b.BuildBlock(f.parent, f.validators, txns)
+	block, err := f.b.BuildBlock(f.parent, f.validators, f.stateTransactions)
 	if err != nil {
 		panic(err)
 	}
@@ -183,6 +196,10 @@ func (f *fsm2) BuildProposal() (*pbft.Proposal, error) {
 }
 
 func (f *fsm2) Validate(proposal []byte) error {
+
+	// TODO: we need to validate the state transactions
+	// This is hard to do though since at th
+
 	return nil
 }
 
