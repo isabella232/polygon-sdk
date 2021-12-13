@@ -13,6 +13,9 @@ import (
 
 var stateSyncEvent = abi.MustNewEvent(`event Transfer(address token, address to, uint256 amount)`)
 
+// StateTransaction is a special type of transaction that was not sent as part of the normal
+// txpool but agreed as part of the consensus protocol by all the validators. Note that this
+// transactions do not include a From address and should skip any balance or pre-check.
 type StateTransaction struct {
 	To    types.Address
 	Input []byte
@@ -21,9 +24,16 @@ type StateTransaction struct {
 // This should be the interface we require from the outside
 type Backend interface {
 	InsertBlock(b *types.Block) error
+
+	// Header returns the current header of the blockchain
 	Header() *types.Header
+
+	// IsStuck returns wether the block is out of sync (name might be confusing)
 	IsStuck() (uint64, bool)
+
 	BuildBlock(parent *types.Header, validators []types.Address, transactions []*StateTransaction) (*types.Block, error)
+
+	// Hash takes an input a block in rlp format and returns the hash of that block
 	Hash(p []byte) ([]byte, error)
 }
 
