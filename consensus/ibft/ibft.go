@@ -194,7 +194,6 @@ func (i *Ibft) Hash(p []byte) ([]byte, error) {
 }
 
 func (i *Ibft) Call(parent *types.Header, to types.Address, data []byte) ([]byte, error) {
-
 	tt, err := i.executor.BeginTxn(parent.StateRoot, parent, types.Address{})
 	if err != nil {
 		panic(err)
@@ -257,10 +256,6 @@ func (i *Ibft) IsStuck() (uint64, bool) {
 		return bestPeer.Number(), true
 	}
 	return 0, false
-}
-
-func (i *Ibft) BuildBlock(parent *types.Header, validators []types.Address, transactions []*polybft.StateTransaction) (*types.Block, error) {
-	return i.buildBlock(parent, validators, transactions)
 }
 
 // Start starts the IBFT consensus
@@ -471,116 +466,6 @@ func (i *Ibft) runSyncState() {
 	}
 }
 
-var defaultBlockPeriod = 2 * time.Second
-
-// buildBlock builds the block, based on the passed in snapshot and parent header
-func (i *Ibft) buildBlock(parent *types.Header, validators []types.Address, stateTxns []*polybft.StateTransaction) (*types.Block, error) {
-	header := &types.Header{
-		ParentHash: parent.Hash,
-		Number:     parent.Number + 1,
-		Miner:      types.Address{},
-		Nonce:      types.Nonce{},
-		//MixHash:    IstanbulDigest,
-		Difficulty: parent.Number + 1,   // we need to do this because blockchain needs difficulty to organize blocks and forks
-		StateRoot:  types.EmptyRootHash, // this avoids needing state for now
-		Sha3Uncles: types.EmptyUncleHash,
-		GasLimit:   parent.GasLimit, // Inherit from parent for now, will need to adjust dynamically later.
-	}
-
-	// calculate gas limit based on parent header
-	gasLimit, err := i.blockchain.CalculateGasLimit(header.Number)
-	if err != nil {
-		return nil, err
-	}
-	header.GasLimit = gasLimit
-
-	// set the timestamp
-	parentTime := time.Unix(int64(parent.Timestamp), 0)
-	headerTime := parentTime.Add(defaultBlockPeriod)
-
-	if headerTime.Before(time.Now()) {
-		headerTime = time.Now()
-	}
-	header.Timestamp = uint64(headerTime.Unix())
-
-	transition, err := i.executor.BeginTxn(parent.StateRoot, header, types.Address{})
-	if err != nil {
-		return nil, err
-	}
-	txns := []*types.Transaction{}
-	for {
-		txn, retFn := i.txpool.Pop()
-		if txn == nil {
-			break
-		}
-
-		if txn.ExceedsBlockGasLimit(gasLimit) {
-			i.logger.Error(fmt.Sprintf("failed to write transaction: %v", state.ErrBlockLimitExceeded))
-			i.txpool.DecreaseAccountNonce(txn)
-		} else {
-			if err := transition.Write(txn); err != nil {
-				if appErr, ok := err.(*state.TransitionApplicationError); ok && appErr.IsRecoverable {
-					retFn()
-				} else {
-					i.txpool.DecreaseAccountNonce(txn)
-				}
-				break
-			}
-			txns = append(txns, txn)
-		}
-	}
-	i.logger.Info("picked out txns from pool", "num", len(txns), "remaining", i.txpool.Length())
-
-	// a bit ugly but works
-	// V3Notes: This does not take into account many things like:
-	// 1. Do we have enough gas to make this post hooks?
-	// 2. Should we send state txns first?
-	// V3. Apply all the state transactions
-	for _, txn := range stateTxns {
-		transaction := &types.Transaction{
-			Input:    txn.Input,
-			To:       &txn.To,
-			Value:    big.NewInt(0),
-			GasPrice: big.NewInt(0),
-		}
-		if err := transition.Write(transaction); err != nil {
-			panic(err)
-		}
-		txns = append(txns, transaction)
-	}
-
-	_, root := transition.Commit()
-	header.StateRoot = root
-	header.GasUsed = transition.TotalGas()
-
-	i.logger.Info("final root", header.StateRoot)
-
-	// build the block
-	block := consensus.BuildBlock(consensus.BuildBlockParams{
-		Header:   header,
-		Txns:     txns,
-		Receipts: transition.Receipts(),
-	})
-
-	i.polybft.Finish(block, validators)
-
-	/*
-		// write the seal of the block after all the fields are completed
-		header, err = writeSeal(i.validatorKey.priv, block.Header)
-		if err != nil {
-			return nil, err
-		}
-		block.Header = header
-	*/
-
-	// compute the hash, this is only a provisional hash since the final one
-	// is sealed after all the committed seals
-	block.Header.ComputeHash()
-
-	i.logger.Info("build block", "number", header.Number, "txns", len(txns))
-	return block, nil
-}
-
 // isSealing checks if the current node is sealing blocks
 func (i *Ibft) isSealing() bool {
 	return i.sealing
@@ -589,7 +474,7 @@ func (i *Ibft) isSealing() bool {
 // verifyHeaderImpl implements the actual header verification logic
 func (i *Ibft) verifyHeaderImpl(parent, header *types.Header) error {
 
-	if err := i.polybft.VerifyHeader(header); err != nil {
+	if err := i.polybft.VerifyExtra(header.ExtraData); err != nil {
 		return err
 	}
 	if header.Sha3Uncles != types.EmptyUncleHash {
@@ -649,4 +534,163 @@ func (i *Ibft) Close() error {
 		*/
 	}
 	return nil
+}
+
+type builder struct {
+	i *Ibft
+
+	parent            *types.Header
+	block             *types.Block
+	logger            hclog.Logger
+	stateTransactions []*polybft.StateTransaction
+}
+
+// BuildBlock is executed by the proposer to gather transactions and build the block
+func (b *builder) BuildBlock(headerTime time.Time, stateTransactions []*polybft.StateTransaction) (*polybft.ProposedBlock, error) {
+	i := b.i
+	parent := b.parent
+
+	if parent.Hash == types.ZeroHash {
+		panic("BAD")
+	}
+
+	header := &types.Header{
+		ParentHash: parent.Hash,
+		Number:     parent.Number + 1,
+		Miner:      types.Address{},
+		Nonce:      types.Nonce{},
+		//MixHash:    IstanbulDigest,
+		Difficulty: parent.Number + 1,   // we need to do this because blockchain needs difficulty to organize blocks and forks
+		StateRoot:  types.EmptyRootHash, // this avoids needing state for now
+		Sha3Uncles: types.EmptyUncleHash,
+		GasLimit:   parent.GasLimit, // Inherit from parent for now, will need to adjust dynamically later.
+	}
+
+	// calculate gas limit based on parent header
+	gasLimit, err := i.blockchain.CalculateGasLimit(header.Number)
+	if err != nil {
+		return nil, err
+	}
+	header.GasLimit = gasLimit
+
+	// set the timestamp
+	/*
+		parentTime := time.Unix(int64(parent.Timestamp), 0)
+		headerTime := parentTime.Add(defaultBlockPeriod)
+
+		if headerTime.Before(time.Now()) {
+			headerTime = time.Now()
+		}
+	*/
+
+	header.Timestamp = uint64(headerTime.Unix())
+
+	transition, err := i.executor.BeginTxn(parent.StateRoot, header, types.Address{})
+	if err != nil {
+		return nil, err
+	}
+	txns := []*types.Transaction{}
+	for {
+		txn, retFn := i.txpool.Pop()
+		if txn == nil {
+			break
+		}
+
+		if txn.ExceedsBlockGasLimit(gasLimit) {
+			i.logger.Error(fmt.Sprintf("failed to write transaction: %v", state.ErrBlockLimitExceeded))
+			i.txpool.DecreaseAccountNonce(txn)
+		} else {
+			if err := transition.Write(txn); err != nil {
+				if appErr, ok := err.(*state.TransitionApplicationError); ok && appErr.IsRecoverable {
+					retFn()
+				} else {
+					i.txpool.DecreaseAccountNonce(txn)
+				}
+				break
+			}
+			txns = append(txns, txn)
+		}
+	}
+	i.logger.Info("picked out txns from pool", "num", len(txns), "remaining", i.txpool.Length())
+
+	// a bit ugly but works
+	// V3Notes: This does not take into account many things like:
+	// 1. Do we have enough gas to make this post hooks?
+	// 2. Should we send state txns first?
+	// V3. Apply all the state transactions
+	for _, txn := range b.stateTransactions {
+		transaction := &types.Transaction{
+			Input:    txn.Input,
+			To:       &txn.To,
+			Value:    big.NewInt(0),
+			GasPrice: big.NewInt(0),
+		}
+		if err := transition.Write(transaction); err != nil {
+			panic(err)
+		}
+		txns = append(txns, transaction)
+	}
+
+	_, root := transition.Commit()
+	header.StateRoot = root
+	header.GasUsed = transition.TotalGas()
+
+	i.logger.Info("final root", header.StateRoot)
+
+	// build the block
+	block := consensus.BuildBlock(consensus.BuildBlockParams{
+		Header:   header,
+		Txns:     txns,
+		Receipts: transition.Receipts(),
+	})
+	b.block = block
+
+	// THIS IS THE UGLY PART SO FAR.
+	hash := polyBFTHeaderHash(block.Header)
+
+	pp := &polybft.ProposedBlock{
+		Hash: hash.Bytes(),
+		Raw:  block.MarshalRLP(),
+	}
+	return pp, nil
+}
+
+// TODO: Executed by non-proposers to validate a block proposal. This only involves transaction execution
+func (b *builder) Validate(proposal []byte) ([]byte, error) {
+	// TODO: Run the transactions too
+	block := &types.Block{}
+	if err := block.UnmarshalRLP(proposal); err != nil {
+		panic(err)
+	}
+	b.block = block
+
+	return b.i.Hash(proposal)
+}
+
+// Commit is the final stage to effectively write the block
+func (b *builder) Commit(extra []byte) {
+
+	block := b.block
+	block.Header.ExtraData = extra
+	block.Header.ComputeHash()
+
+	fmt.Println("-- block --")
+	fmt.Println(block)
+
+	if err := b.i.InsertBlock(block); err != nil {
+		// commit should be an error free function since all the validation should be performed before hand and at this
+		// point we should be pretty sure that everything has been written and it is valid. The only thing left would be
+		// to change the new canonical header
+		// Thus, Commit should not call in the future InsertBlock but a different function.
+		fmt.Println("-- err --")
+		fmt.Println(err)
+
+		panic("bad")
+	}
+
+	b.logger.Info("commit block", "number", block.Header.Number, "hash", block.Header.Hash)
+}
+
+func (i *Ibft) BlockBuilder(parent *types.Header) polybft.BlockBuilder {
+	return &builder{i: i, parent: parent, logger: i.logger.Named("builder")}
 }

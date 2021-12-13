@@ -1,8 +1,11 @@
 package clean
 
 import (
+	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/0xPolygon/polygon-sdk/command/helper"
 	"github.com/mitchellh/cli"
@@ -31,16 +34,34 @@ func (c *CleanCommand) GetBaseCommand() string {
 
 // Run implements the cli.Command interface
 func (c *CleanCommand) Run(args []string) int {
-	path := args[0]
+	prefix := args[0]
+
+	files, err := ioutil.ReadDir(".")
+	if err != nil {
+		panic(err)
+	}
 
 	localPath := []string{
 		"blockchain",
 		"trie",
 	}
-	for _, p := range localPath {
-		if err := os.RemoveAll(filepath.Join(path, p)); err != nil {
-			c.UI.Warn(err.Error())
+
+	for _, file := range files {
+		path := file.Name()
+		if !file.IsDir() {
+			continue
+		}
+		if !strings.HasPrefix(path, prefix) {
+			continue
+		}
+		fmt.Println(path)
+
+		for _, p := range localPath {
+			if err := os.RemoveAll(filepath.Join(path, p)); err != nil {
+				c.UI.Warn(err.Error())
+			}
 		}
 	}
+
 	return 0
 }

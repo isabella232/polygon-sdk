@@ -96,15 +96,25 @@ func (p *PolyBFT) NodeID() pbft.NodeID {
 	return pbft.NodeID(p.key.Address().String())
 }
 
-func (p *PolyBFT) VerifyHeader(header *types.Header) error {
+func (p *PolyBFT) VerifyExtra(extra []byte) error {
 	// ensure the extra data is correctly formatted
-	if _, err := GetIbftExtra(header); err != nil {
-		return err
-	}
 
-	if header.MixHash != IstanbulDigest {
-		return fmt.Errorf("invalid mixhash")
-	}
+	/*
+		fmt.Println("-- extra --")
+		fmt.Println(header.ExtraData)
+
+		if _, err := GetIbftExtra(header); err != nil {
+			return err
+		}
+	*/
+
+	// TODO
+
+	/*
+		if header.MixHash != IstanbulDigest {
+			return fmt.Errorf("invalid mixhash")
+		}
+	*/
 
 	return nil
 }
@@ -113,6 +123,7 @@ func (p *PolyBFT) BlockCreator(header *types.Header) (types.Address, error) {
 	return ecrecoverFromHeader(header)
 }
 
+/*
 func (p *PolyBFT) Finish(block *types.Block, validators []types.Address) error {
 	header := block.Header
 	header.MixHash = IstanbulDigest
@@ -129,6 +140,7 @@ func (p *PolyBFT) Finish(block *types.Block, validators []types.Address) error {
 
 	return nil
 }
+*/
 
 func (p *PolyBFT) IsValidator() bool {
 	// check if we are a validator and enabled

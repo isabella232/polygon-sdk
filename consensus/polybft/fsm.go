@@ -1,6 +1,8 @@
 package polybft
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"time"
@@ -21,20 +23,33 @@ type StateTransaction struct {
 	Input []byte
 }
 
+type ProposedBlock struct {
+	Raw  []byte
+	Hash []byte
+}
+
+// BlockBuilder is the instance that we run inside the fsm
+type BlockBuilder interface {
+	// BuildBlock is executed by the proposer to gather transactions and build the block
+	BuildBlock(timestamp time.Time, stateTransactions []*StateTransaction) (*ProposedBlock, error)
+
+	// TODO: Executed by non-proposers to validate a block proposal. This only involves transaction execution
+	Validate(proposal []byte) ([]byte, error)
+
+	// Commit is the final stage to effectively write the block
+	Commit(extra []byte)
+}
+
 // This should be the interface we require from the outside
 type Backend interface {
-	InsertBlock(b *types.Block) error
+	// BlockBuilder returns a block builder
+	BlockBuilder(parent *types.Header) BlockBuilder
 
 	// Header returns the current header of the blockchain
 	Header() *types.Header
 
 	// IsStuck returns wether the block is out of sync (name might be confusing)
 	IsStuck() (uint64, bool)
-
-	BuildBlock(parent *types.Header, validators []types.Address, transactions []*StateTransaction) (*types.Block, error)
-
-	// Hash takes an input a block in rlp format and returns the hash of that block
-	Hash(p []byte) ([]byte, error)
 }
 
 type fsm2 struct {
@@ -44,10 +59,14 @@ type fsm2 struct {
 	// this is the hash of the block, the thing we sign
 	hash []byte
 
+	seal []byte
+
 	stateTransactions []*StateTransaction
 	parent            *types.Header
 	validators        []types.Address
 	lastProposer      types.Address
+
+	builder BlockBuilder
 }
 
 func (f *fsm2) init() error {
@@ -184,59 +203,95 @@ func (f *fsm2) isEndOfEpoch() bool {
 	return f.Height()%10 == 0
 }
 
+var (
+	defaultBlockPeriod = 2 * time.Second
+)
+
+// polyBFTProposal is the proposal we are trying to commit with polybft
+type polyBFTProposal struct {
+	BlockRaw []byte
+
+	// We could move this field to pbft.Proposal?
+	Seal []byte
+
+	// We could move this field to pbft.Proposal?
+	Hash []byte
+}
+
+func (p *polyBFTProposal) Marshal() ([]byte, error) {
+	// HACK(ferran). this is not the best marshal
+	return json.Marshal(p)
+}
+
+func (p *polyBFTProposal) Unmarshal(b []byte) error {
+	return json.Unmarshal(b, p)
+}
+
 func (f *fsm2) BuildProposal() (*pbft.Proposal, error) {
-	// THIS IS PART OF ACCETSTATE, THE PART THAT WE RUN DURING THE PROPOSAL
+	// THIS IS PART OF ACCETSTATE, THE PART THAT WE RUN IF WE ARE THE PROPOSER
+	f.builder = f.b.BlockBuilder(f.parent)
 
-	// SEVERAL WAYS TO APPROACH THE PROBLEM OF SENDING CUSTOM TXNS TO THE CLIENT
-	// 1. WE EITHER LET THE PROPOSER CREATE THE TXNS AND SEND THEM TO THE VALIDATORS
-	// 	  THEN, EACH ONE SHOULD VALIDATE EACH OF THOSE CUSTOM TRANSACTIONS (I.E. IS THIS MESSAGE POOL GOOD?)
-	//    (I.E. DOES IT INCLUDES VALIDATORSETCHANGE AT THE END OF EPOCH?)
-	// 2. WE ONLY PASS THE BLOCK TRANSACTIONS AND EACH VALIDATOR ON ITS OWN INCLUDES THE TXNS AND BLOCKS
-	//    THE ONLY PROBLEM HERE IS THAT WE ARE LOCKING A STRANGE HASH IN PBFT AND WE WILL ONLY KNOW AFTER
-	// 	  THE FINAL BLOCK IS INCLUDE IS SOMETHING WENT WRONG. (THIS IS, STATE TXNS ARE NOT PART OF THE PBFT PROTOCOL).
-	// 3. A MIX OF BOTH, WE HAVE A GENERIC FUNCTION CALLED GETSTATETXNS() THAT RETURNS ALL THE STATE TRANSACTIONS
-	//    DURING THE VALIDATION STAGE, WE CHECK THAT ALL THIS TRANSACTIONS ARE INCLUDED IN THE LOCKED BLOCK.
+	// set timestamp (selecting the timestamp is a config of the consensus protocol)
+	parentTime := time.Unix(int64(f.parent.Timestamp), 0)
+	headerTime := parentTime.Add(defaultBlockPeriod)
 
-	block, err := f.b.BuildBlock(f.parent, f.validators, f.stateTransactions)
+	if headerTime.Before(time.Now()) {
+		headerTime = time.Now()
+	}
+
+	proposal, err := f.builder.BuildBlock(headerTime, f.stateTransactions)
+	if err != nil {
+		return nil, err
+	}
+	f.hash = proposal.Hash
+
+	// add the seal to the block
+	seal, err := writeSeal2(f.p.key, proposal.Hash, false)
+	if err != nil {
+		return nil, err
+	}
+	f.seal = seal
+
+	polyBFTProposal := &polyBFTProposal{
+		BlockRaw: proposal.Raw,
+		Seal:     seal,
+		Hash:     f.hash,
+	}
+	data, err := polyBFTProposal.Marshal()
 	if err != nil {
 		panic(err)
 	}
 
-	data := block.MarshalRLP()
-	proposal := &pbft.Proposal{
-		Time: time.Unix(int64(block.Header.Timestamp), 0),
+	proposal2 := &pbft.Proposal{
+		Time: time.Unix(int64(headerTime.Unix()), 0),
 		Data: data,
 	}
-
-	// block builder comes here..
-	// this later on is differetnw ith the builder
-	// 1. get the hash
-	// 2. sign it
-	// 3. add the extra
-	// 4. include the hash in the proposal
-	hash, err := f.b.Hash(data)
-	if err != nil {
-		panic(err)
-	}
-	f.hash = hash
-	// 2. sign it and include validators
-
-	return proposal, nil
+	return proposal2, nil
 }
 
 func (f *fsm2) Validate(proposal []byte) error {
+
+	// decode the proposal
+	polybftProposal := &polyBFTProposal{}
+	if err := polybftProposal.Unmarshal(proposal); err != nil {
+		return err
+	}
+	f.seal = polybftProposal.Seal
+
 	// THIS IS PART OF ACCETSTATE, THE PART WE RUN DURING THE VALIDATION
 	// AT THIS POINT WE SHOULD GET THE PROPOSAL OBJECT TOO.
-
-	hash, err := f.b.Hash(proposal)
+	f.builder = f.b.BlockBuilder(f.parent)
+	hash, err := f.builder.Validate(polybftProposal.BlockRaw)
 	if err != nil {
 		panic(err)
 	}
+	if !bytes.Equal(polybftProposal.Hash, hash) {
+		// we have been notified of a hash that is not correct
+		panic("bad")
+	}
 	f.hash = hash
 
-	// TODO: we need to validate the state transactions
-	// This is hard to do though since at th
-
+	// TODO: Validate seal as well? or do that in pbft?
 	return nil
 }
 
@@ -247,30 +302,14 @@ func (f *fsm2) Insert(p *pbft.SealedProposal) error {
 	// THEN, AT THIS POINT IT IS ONLY A MATTER OF INCLUDING THE COMMITED SEALS AND FINISH
 	// THIS IS, UPDATE THE EXTRA?
 
-	block := &types.Block{}
-	if err := block.UnmarshalRLP(p.Proposal); err != nil {
-		panic(err)
+	extra := &Extra{
+		Seal:          f.seal,
+		Validators:    f.validators,
+		CommittedSeal: p.CommittedSeals,
 	}
 
-	header, err := writeCommittedSeals(block.Header, p.CommittedSeals)
-	if err != nil {
-		return err
-	}
-
-	// we need to recompute the hash since we have change extra-data
-	block.Header = header
-	block.Header.ComputeHash()
-
-	/// TODO: InsertBlock()
-	if err := f.b.InsertBlock(block); err != nil {
-		return err
-	}
-
-	/*
-		if err := f.i.insertBlock(block, p.CommittedSeals); err != nil {
-			panic(err)
-		}
-	*/
+	// fill in 32 since the extra starts after 32 bytes (vanity extra)
+	f.builder.Commit(extra.MarshalRLPTo(make([]byte, 32)))
 
 	return nil
 }
@@ -287,58 +326,12 @@ func (f *fsm2) ValidatorSet() pbft.ValidatorSet {
 func (f *fsm2) Hash(p []byte) []byte {
 	// THIS IS THE COMMIT SEAL
 
-	/*
-		hash, err := f.b.Hash(p)
-		if err != nil {
-			panic(err)
-		}
-	*/
-
-	/*
-		block := &types.Block{}
-		if err := block.UnmarshalRLP(p); err != nil {
-			panic(err)
-		}
-		hash, err := calculateHeaderHash(block.Header)
-		if err != nil {
-			panic(err)
-		}
-	*/
-
-	//fmt.Println("-- hash --")
-	//fmt.Println(block.Header)
-	//fmt.Println(hash)
-
 	msg := commitMsg(f.hash)
-
-	//fmt.Println("-- msg --")
-	//fmt.Println(msg)
-
 	return msg
 }
 
 func (f *fsm2) IsStuck(num uint64) (uint64, bool) {
 	return f.b.IsStuck()
-
-	/*
-		if f.i.syncer == nil {
-			// we cannot answer it. skip it
-			return 0, false
-		}
-
-		bestPeer := f.i.syncer.BestPeer()
-		if bestPeer == nil {
-			// there is no best peer, skip it
-			return 0, false
-		}
-
-		lastProposal := f.i.blockchain.Header() // isnt this parent??
-		if bestPeer.Number() > lastProposal.Number {
-			// we are stuck
-			return bestPeer.Number(), true
-		}
-		return 0, false
-	*/
 }
 
 type dummySet struct {

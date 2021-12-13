@@ -3,7 +3,6 @@ package types
 import (
 	"database/sql/driver"
 	"encoding/binary"
-	"fmt"
 	"sync/atomic"
 
 	"github.com/0xPolygon/polygon-sdk/helper/hex"
@@ -118,11 +117,6 @@ func (b *Block) Size() uint64 {
 	}
 
 	return *sizePtr.(*uint64)
-}
-
-func (b *Block) String() string {
-	str := fmt.Sprintf(`Block(#%v):`, b.Number())
-	return str
 }
 
 // WithSeal returns a new block with the data from b but the header replaced with

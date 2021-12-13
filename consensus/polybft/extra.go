@@ -8,9 +8,8 @@ import (
 )
 
 var (
-	// IstanbulDigest represents a hash of "Istanbul practical byzantine fault tolerance"
-	// to identify whether the block is from Istanbul consensus engine
-	IstanbulDigest = types.StringToHash("0x63746963616c2062797a616e74696e65206661756c7420746f6c6572616e6365")
+	// PolyBFTDigest represents a hash of "PolyBFT" to identify whether the block is from PolyBFT consensus engine
+	PolyBFTDigest = types.StringToHash("3ceb7974985f530ac20a5ddf2e9e9bd54d1674e810e06bbcca9015105aa6b6f9")
 
 	// ExtraVanity represents a fixed number of extra-data bytes reserved for proposer vanity
 	ExtraVanity = 32
@@ -110,7 +109,7 @@ func (i *Extra) MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value {
 		committed := ar.NewArray()
 		for _, a := range i.CommittedSeal {
 			if len(a) == 0 {
-				vv.Set(ar.NewNull())
+				committed.Set(ar.NewNull())
 			} else {
 				committed.Set(ar.NewBytes(a))
 			}

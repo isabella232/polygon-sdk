@@ -62,6 +62,19 @@ func signSealImpl(prv web3.Key, h *types.Header, committed bool) ([]byte, error)
 	return seal, nil
 }
 
+func writeSeal2(prv web3.Key, hash []byte, committed bool) ([]byte, error) {
+	msg := hash
+	if committed {
+		msg = commitMsg(hash)
+	}
+	seal, err := prv.Sign(web3.Keccak256(msg))
+	if err != nil {
+		return nil, err
+	}
+	return seal, nil
+}
+
+/*
 func writeSeal(prv web3.Key, h *types.Header) (*types.Header, error) {
 	h = h.Copy()
 	seal, err := signSealImpl(prv, h, false)
@@ -81,6 +94,7 @@ func writeSeal(prv web3.Key, h *types.Header) (*types.Header, error) {
 
 	return h, nil
 }
+*/
 
 func writeCommittedSeal(prv web3.Key, h *types.Header) ([]byte, error) {
 	return signSealImpl(prv, h, true)
