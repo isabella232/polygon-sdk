@@ -40,7 +40,7 @@ type PolyBFT struct {
 }
 
 type Executor interface {
-	Call(parent *types.Header, to types.Address, data []byte) ([]byte, error)
+	Call(parent web3.Hash, to types.Address, data []byte) ([]byte, error)
 }
 
 type Config struct {
@@ -96,7 +96,7 @@ func (p *PolyBFT) NodeID() pbft.NodeID {
 	return pbft.NodeID(p.key.Address().String())
 }
 
-func (p *PolyBFT) VerifyExtra(extra []byte) error {
+func (p *PolyBFT) VerifyExtra(header *Header) error {
 	// ensure the extra data is correctly formatted
 
 	/*
@@ -119,10 +119,6 @@ func (p *PolyBFT) VerifyExtra(extra []byte) error {
 	return nil
 }
 
-func (p *PolyBFT) BlockCreator(header *types.Header) (types.Address, error) {
-	return ecrecoverFromHeader(header)
-}
-
 /*
 func (p *PolyBFT) Finish(block *types.Block, validators []types.Address) error {
 	header := block.Header
@@ -142,9 +138,9 @@ func (p *PolyBFT) Finish(block *types.Block, validators []types.Address) error {
 }
 */
 
-func (p *PolyBFT) IsValidator() bool {
+func (p *PolyBFT) IsValidator(header *Header) bool {
 	// check if we are a validator and enabled
-	header := p.Backend.Header()
+	// header := p.Backend.Header()
 
 	val := p.getValidators(header)
 	dd := &dummySet{set: val, lastProposer: types.Address{}}
@@ -173,7 +169,7 @@ func (p *PolyBFT) GetState() pbft.PbftState {
 	return p.pbft.GetState()
 }
 
-func (p *PolyBFT) Run(parent *types.Header) {
+func (p *PolyBFT) Run(parent *Header) {
 	fsm := &fsm2{
 		parent: parent,
 		b:      p.Backend,
@@ -246,7 +242,7 @@ func (p *pbftTransport) Gossip(msg *pbft.MessageReq) error {
 	return nil
 }
 
-func (p *PolyBFT) getValidators(parent *types.Header) []types.Address {
+func (p *PolyBFT) getValidators(parent *Header) []types.Address {
 	// get a state reference for this to make calls and txns!
 	// to call we need to use the parent reference
 
@@ -257,7 +253,7 @@ func (p *PolyBFT) getValidators(parent *types.Header) []types.Address {
 		panic(err)
 	}
 
-	returnValue, err := p.Executor.Call(parent, p.config.ValidatorContractAddr, xx.Methods["getValidators"].ID())
+	returnValue, err := p.Executor.Call(parent.Hash, p.config.ValidatorContractAddr, xx.Methods["getValidators"].ID())
 	if err != nil {
 		panic(err)
 	}

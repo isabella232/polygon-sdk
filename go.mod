@@ -31,7 +31,7 @@ require (
 	github.com/ryanuber/columnize v2.1.2+incompatible
 	github.com/stretchr/testify v1.7.0
 	github.com/syndtr/goleveldb v1.0.1-0.20190923125748-758128399b1d
-	github.com/umbracle/fastrlp v0.0.0-20210128110402-41364ca56ca8
+	github.com/umbracle/fastrlp v0.0.0-20211210202053-92c528b55dea
 	github.com/umbracle/go-eth-bn256 v0.0.0-20190607160430-b36caf4e0f6b
 	github.com/umbracle/go-web3 v0.0.0-20211210100813-f99eda2163c3
 	go.uber.org/zap v1.16.0 // indirect

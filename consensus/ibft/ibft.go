@@ -34,6 +34,7 @@ const (
 type blockchainInterface interface {
 	Header() *types.Header
 	GetHeaderByNumber(i uint64) (*types.Header, bool)
+	GetHeaderByHash(hash types.Hash) (*types.Header, bool)
 	WriteBlocks(blocks []*types.Block) error
 	CalculateGasLimit(number uint64) (uint64, error)
 }
@@ -130,7 +131,7 @@ func Factory(
 	}
 
 	// Istanbul requires a different header hash function
-	types.HeaderHash = polybft.IstanbulHeaderHash
+	types.HeaderHash = polyBFTHeaderHash
 
 	p.syncer = protocol.NewSyncer(logger, network, blockchain)
 
@@ -193,7 +194,12 @@ func (i *Ibft) Hash(p []byte) ([]byte, error) {
 	return hash.Bytes(), nil
 }
 
-func (i *Ibft) Call(parent *types.Header, to types.Address, data []byte) ([]byte, error) {
+func (i *Ibft) Call(parentHash web3.Hash, to types.Address, data []byte) ([]byte, error) {
+	parent, ok := i.blockchain.GetHeaderByHash(types.Hash(parentHash))
+	if !ok {
+		return nil, fmt.Errorf("not found block %s", parentHash.String())
+	}
+
 	tt, err := i.executor.BeginTxn(parent.StateRoot, parent, types.Address{})
 	if err != nil {
 		panic(err)
@@ -210,8 +216,12 @@ func (i *Ibft) Call(parent *types.Header, to types.Address, data []byte) ([]byte
 	return res.ReturnValue, nil
 }
 
-func (i *Ibft) Header() *types.Header {
-	return i.blockchain.Header()
+func (i *Ibft) Header() *polybft.Header {
+	block, err := convertBlock(i.blockchain.Header())
+	if err != nil {
+		panic(err)
+	}
+	return block
 }
 
 func (i *Ibft) InsertBlock(block *types.Block) error {
@@ -368,7 +378,10 @@ SYNC:
 	i.runSyncState()
 
 	for {
-		parent := i.blockchain.Header()
+		parent, err := convertBlock(i.blockchain.Header())
+		if err != nil {
+			panic(err)
+		}
 
 		i.polybft.Run(parent)
 
@@ -474,7 +487,11 @@ func (i *Ibft) isSealing() bool {
 // verifyHeaderImpl implements the actual header verification logic
 func (i *Ibft) verifyHeaderImpl(parent, header *types.Header) error {
 
-	if err := i.polybft.VerifyExtra(header.ExtraData); err != nil {
+	headerStub, err := convertBlock(header)
+	if err != nil {
+		return err
+	}
+	if err := i.polybft.VerifyExtra(headerStub); err != nil {
 		return err
 	}
 	if header.Sha3Uncles != types.EmptyUncleHash {
@@ -515,9 +532,27 @@ func (i *Ibft) VerifyHeader(parent, header *types.Header) error {
 	return nil
 }
 
+func convertBlock(header *types.Header) (*polybft.Header, error) {
+	h := &polybft.Header{
+		Hash:       web3.Hash(header.Hash),
+		ParentHash: web3.Hash(header.ParentHash),
+		Number:     header.Number,
+		Extra:      &polybft.Extra{},
+		Timestamp:  time.Unix(int64(header.Timestamp), 0),
+	}
+	if err := h.Extra.UnmarshalRLP(header.ExtraData[32:]); err != nil {
+		return nil, err
+	}
+	return h, nil
+}
+
 // GetBlockCreator retrieves the block signer from the extra data field
 func (i *Ibft) GetBlockCreator(header *types.Header) (types.Address, error) {
-	return i.polybft.BlockCreator(header)
+	b, err := convertBlock(header)
+	if err != nil {
+		return types.Address{}, err
+	}
+	return b.Ecrecover()
 }
 
 // Close closes the IBFT consensus mechanism, and does write back to disk
@@ -539,7 +574,7 @@ func (i *Ibft) Close() error {
 type builder struct {
 	i *Ibft
 
-	parent            *types.Header
+	parent            *polybft.Header
 	block             *types.Block
 	logger            hclog.Logger
 	stateTransactions []*polybft.StateTransaction
@@ -548,8 +583,12 @@ type builder struct {
 // BuildBlock is executed by the proposer to gather transactions and build the block
 func (b *builder) BuildBlock(headerTime time.Time, stateTransactions []*polybft.StateTransaction) (*polybft.ProposedBlock, error) {
 	i := b.i
-	parent := b.parent
+	// parent := b.parent
 
+	parent, ok := b.i.blockchain.GetHeaderByHash(types.Hash(b.parent.Hash))
+	if !ok {
+		return nil, fmt.Errorf("block not found: %s", b.parent.Hash)
+	}
 	if parent.Hash == types.ZeroHash {
 		panic("BAD")
 	}
@@ -691,6 +730,6 @@ func (b *builder) Commit(extra []byte) {
 	b.logger.Info("commit block", "number", block.Header.Number, "hash", block.Header.Hash)
 }
 
-func (i *Ibft) BlockBuilder(parent *types.Header) polybft.BlockBuilder {
+func (i *Ibft) BlockBuilder(parent *polybft.Header) polybft.BlockBuilder {
 	return &builder{i: i, parent: parent, logger: i.logger.Named("builder")}
 }

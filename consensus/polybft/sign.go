@@ -6,9 +6,7 @@ import (
 	"github.com/0xPolygon/polygon-sdk/consensus/polybft/proto"
 	"github.com/0xPolygon/polygon-sdk/crypto"
 	"github.com/0xPolygon/polygon-sdk/helper/hex"
-	"github.com/0xPolygon/polygon-sdk/helper/keccak"
 	"github.com/0xPolygon/polygon-sdk/types"
-	"github.com/umbracle/fastrlp"
 	"github.com/umbracle/go-web3"
 	"github.com/umbracle/go-web3/wallet"
 )
@@ -24,10 +22,10 @@ func ecrecoverImpl(sig, msg []byte) (types.Address, error) {
 	if err != nil {
 		return types.Address{}, err
 	}
-
 	return crypto.PubKeyToAddress(pub), nil
 }
 
+/*
 func ecrecoverFromHeader(h *types.Header) (types.Address, error) {
 	// get the extra part that contains the seal
 	extra, err := GetIbftExtra(h)
@@ -42,7 +40,9 @@ func ecrecoverFromHeader(h *types.Header) (types.Address, error) {
 
 	return ecrecoverImpl(extra.Seal, msg)
 }
+*/
 
+/*
 func signSealImpl(prv web3.Key, h *types.Header, committed bool) ([]byte, error) {
 	hash, err := calculateHeaderHash(h)
 	if err != nil {
@@ -61,8 +61,9 @@ func signSealImpl(prv web3.Key, h *types.Header, committed bool) ([]byte, error)
 
 	return seal, nil
 }
+*/
 
-func writeSeal2(prv web3.Key, hash []byte, committed bool) ([]byte, error) {
+func writeSeal(prv web3.Key, hash []byte, committed bool) ([]byte, error) {
 	msg := hash
 	if committed {
 		msg = commitMsg(hash)
@@ -96,11 +97,12 @@ func writeSeal(prv web3.Key, h *types.Header) (*types.Header, error) {
 }
 */
 
-func writeCommittedSeal(prv web3.Key, h *types.Header) ([]byte, error) {
+/*
+func writeCommittedSeal2(prv web3.Key, h *types.Header) ([]byte, error) {
 	return signSealImpl(prv, h, true)
 }
 
-func writeCommittedSeals(h *types.Header, seals [][]byte) (*types.Header, error) {
+func writeCommittedSeals2(h *types.Header, seals [][]byte) (*types.Header, error) {
 	h = h.Copy()
 
 	if len(seals) == 0 {
@@ -125,49 +127,10 @@ func writeCommittedSeals(h *types.Header, seals [][]byte) (*types.Header, error)
 
 	return h, nil
 }
+*/
 
-func calculateHeaderHash(h *types.Header) ([]byte, error) {
-	//hash := istanbulHeaderHash(h)
-	//return hash.Bytes(), nil
-
-	h = h.Copy() // make a copy since we update the extra field
-
-	arena := fastrlp.DefaultArenaPool.Get()
-	defer fastrlp.DefaultArenaPool.Put(arena)
-
-	// when hashing the block for signing we have to remove from
-	// the extra field the seal and committed seal items
-	extra, err := GetIbftExtra(h)
-	if err != nil {
-		return nil, err
-	}
-
-	// This will effectively remove the Seal and Commited Seal fields, while keeping proposer vanity and validator set
-	// 		because extra.Validators is what we got from `h` in the first place.
-	PutIbftExtraValidators(h, extra.Validators)
-
-	vv := arena.NewArray()
-	vv.Set(arena.NewBytes(h.ParentHash.Bytes()))
-	vv.Set(arena.NewBytes(h.Sha3Uncles.Bytes()))
-	vv.Set(arena.NewBytes(h.Miner.Bytes()))
-	vv.Set(arena.NewBytes(h.StateRoot.Bytes()))
-	vv.Set(arena.NewBytes(h.TxRoot.Bytes()))
-	vv.Set(arena.NewBytes(h.ReceiptsRoot.Bytes()))
-	vv.Set(arena.NewBytes(h.LogsBloom[:]))
-	vv.Set(arena.NewUint(h.Difficulty))
-	vv.Set(arena.NewUint(h.Number))
-	vv.Set(arena.NewUint(h.GasLimit))
-	vv.Set(arena.NewUint(h.GasUsed))
-	vv.Set(arena.NewUint(h.Timestamp))
-	vv.Set(arena.NewCopyBytes(h.ExtraData))
-
-	buf := keccak.Keccak256Rlp(nil, vv)
-
-	return buf, nil
-}
-
-func verifySigner(snap ValidatorSet, header *types.Header) error {
-	signer, err := ecrecoverFromHeader(header)
+func verifySigner(snap ValidatorSet, header *Header) error {
+	signer, err := header.Ecrecover()
 	if err != nil {
 		return err
 	}
@@ -180,35 +143,23 @@ func verifySigner(snap ValidatorSet, header *types.Header) error {
 }
 
 // verifyCommitedFields is checking for consensus proof in the header
-func verifyCommitedFields(snap ValidatorSet, header *types.Header) error {
-	extra, err := GetIbftExtra(header)
-	if err != nil {
-		return err
-	}
-
+func verifyCommitedFields(snap ValidatorSet, header *Header) error {
 	// Committed seals shouldn't be empty
-	if len(extra.CommittedSeal) == 0 {
+	if len(header.Extra.CommittedSeal) == 0 {
 		return fmt.Errorf("empty committed seals")
-	}
-
-	// get the message that needs to be signed
-	// this not signing! just removing the fields that should be signed
-	hash, err := calculateHeaderHash(header)
-	if err != nil {
-		return err
 	}
 
 	//fmt.Println("-- hash --")
 	//fmt.Println(header)
 	//fmt.Println(hash)
 
-	rawMsg := commitMsg(hash)
+	rawMsg := commitMsg(header.Hash[:])
 
 	//fmt.Println("-- raw validate msg --")
 	//fmt.Println(rawMsg)
 
 	visited := map[types.Address]struct{}{}
-	for _, seal := range extra.CommittedSeal {
+	for _, seal := range header.Extra.CommittedSeal {
 		addr, err := ecrecoverImpl(seal, rawMsg)
 		if err != nil {
 			return err

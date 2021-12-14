@@ -39,3 +39,7 @@ func TestExtraEncoding(t *testing.T) {
 		}
 	}
 }
+
+func TestExtra_RlpFuzz(t *testing.T) {
+
+}

@@ -43,10 +43,10 @@ type BlockBuilder interface {
 // This should be the interface we require from the outside
 type Backend interface {
 	// BlockBuilder returns a block builder
-	BlockBuilder(parent *types.Header) BlockBuilder
+	BlockBuilder(parent *Header) BlockBuilder
 
 	// Header returns the current header of the blockchain
-	Header() *types.Header
+	Header() *Header
 
 	// IsStuck returns wether the block is out of sync (name might be confusing)
 	IsStuck() (uint64, bool)
@@ -62,7 +62,7 @@ type fsm2 struct {
 	seal []byte
 
 	stateTransactions []*StateTransaction
-	parent            *types.Header
+	parent            *Header
 	validators        []types.Address
 	lastProposer      types.Address
 
@@ -79,7 +79,7 @@ func (f *fsm2) init() error {
 
 	var lastProposer types.Address
 	if f.parent.Number != 0 {
-		lastProposer, err = ecrecoverFromHeader(f.parent)
+		lastProposer, err = f.parent.Ecrecover()
 		if err != nil {
 			return err
 		}
@@ -232,7 +232,7 @@ func (f *fsm2) BuildProposal() (*pbft.Proposal, error) {
 	f.builder = f.b.BlockBuilder(f.parent)
 
 	// set timestamp (selecting the timestamp is a config of the consensus protocol)
-	parentTime := time.Unix(int64(f.parent.Timestamp), 0)
+	parentTime := f.parent.Timestamp
 	headerTime := parentTime.Add(defaultBlockPeriod)
 
 	if headerTime.Before(time.Now()) {
@@ -246,7 +246,7 @@ func (f *fsm2) BuildProposal() (*pbft.Proposal, error) {
 	f.hash = proposal.Hash
 
 	// add the seal to the block
-	seal, err := writeSeal2(f.p.key, proposal.Hash, false)
+	seal, err := writeSeal(f.p.key, proposal.Hash, false)
 	if err != nil {
 		return nil, err
 	}

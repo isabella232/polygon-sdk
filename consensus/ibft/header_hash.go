@@ -18,11 +18,11 @@ func polyBFTHeaderHash(h *types.Header) types.Hash {
 
 	// when hashing the block for signing we have to remove from
 	// the extra field the seal and committed seal items
-	extra, err := polybft.GetIbftExtra(h)
+	extra, err := polybft.GetIbftExtraClean(h.ExtraData)
 	if err != nil {
 		return types.Hash{}
 	}
-	polybft.PutIbftExtraValidators(h, extra.Validators)
+	h.ExtraData = extra
 
 	vv := arena.NewArray()
 	vv.Set(arena.NewBytes(h.ParentHash.Bytes()))

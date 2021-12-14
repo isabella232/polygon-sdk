@@ -2,9 +2,11 @@ package polybft
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/0xPolygon/polygon-sdk/types"
 	"github.com/umbracle/fastrlp"
+	"github.com/umbracle/go-web3"
 )
 
 var (
@@ -27,6 +29,7 @@ type Extra struct {
 
 var zeroBytes = make([]byte, 32)
 
+/*
 // putIbftExtraValidators is a helper method that adds validators to the extra field in the header
 func PutIbftExtraValidators(h *types.Header, validators []types.Address) {
 	// Pad zeros to the right up to istanbul vanity
@@ -46,7 +49,23 @@ func PutIbftExtraValidators(h *types.Header, validators []types.Address) {
 	extra = ibftExtra.MarshalRLPTo(extra)
 	h.ExtraData = extra
 }
+*/
 
+func GetIbftExtraClean(extraB []byte) ([]byte, error) {
+	extra, err := GetIbftExtra(extraB)
+	if err != nil {
+		return nil, err
+	}
+
+	ibftExtra := &Extra{
+		Validators:    extra.Validators,
+		Seal:          []byte{},
+		CommittedSeal: [][]byte{},
+	}
+	return ibftExtra.MarshalRLPTo(nil), nil
+}
+
+/*
 // PutIbftExtra sets the extra data field in the header to the passed in istanbul extra data
 func PutIbftExtra(h *types.Header, Extra *Extra) error {
 	// Pad zeros to the right up to istanbul vanity
@@ -63,14 +82,15 @@ func PutIbftExtra(h *types.Header, Extra *Extra) error {
 
 	return nil
 }
+*/
 
 // getIbftExtra returns the istanbul extra data field from the passed in header
-func GetIbftExtra(h *types.Header) (*Extra, error) {
-	if len(h.ExtraData) < ExtraVanity {
-		return nil, fmt.Errorf("wrong extra size: %d", len(h.ExtraData))
+func GetIbftExtra(extraB []byte) (*Extra, error) {
+	if len(extraB) < ExtraVanity {
+		return nil, fmt.Errorf("wrong extra size: %d", len(extraB))
 	}
 
-	data := h.ExtraData[ExtraVanity:]
+	data := extraB[ExtraVanity:]
 	extra := &Extra{}
 	if err := extra.UnmarshalRLP(data); err != nil {
 		return nil, err
@@ -122,11 +142,11 @@ func (i *Extra) MarshalRLPWith(ar *fastrlp.Arena) *fastrlp.Value {
 
 // UnmarshalRLP defines the unmarshal function wrapper for Extra
 func (i *Extra) UnmarshalRLP(input []byte) error {
-	return types.UnmarshalRlp(i.UnmarshalRLPFrom, input)
+	return fastrlp.UnmarshalRLP(input, i)
 }
 
 // UnmarshalRLPFrom defines the unmarshal implementation for Extra
-func (i *Extra) UnmarshalRLPFrom(p *fastrlp.Parser, v *fastrlp.Value) error {
+func (i *Extra) UnmarshalRLPWith(v *fastrlp.Value) error {
 	elems, err := v.GetElems()
 	if err != nil {
 		return err
@@ -170,4 +190,27 @@ func (i *Extra) UnmarshalRLPFrom(p *fastrlp.Parser, v *fastrlp.Value) error {
 		}
 	}
 	return nil
+}
+
+// Header is a stub struct to represent a blockchain header in the Polybft protocol.
+type Header struct {
+	// Hash of the block.
+	Hash web3.Hash
+
+	// Hash of the parent block.
+	ParentHash web3.Hash
+
+	// Number of the block.
+	Number uint64
+
+	// Extra data unmarshalled. It does include fields not part of the
+	// hash of the block.
+	Extra *Extra
+
+	// Timestamp when this block was sealed
+	Timestamp time.Time
+}
+
+func (h *Header) Ecrecover() (types.Address, error) {
+	return ecrecoverImpl(h.Extra.Seal, h.Hash[:])
 }
