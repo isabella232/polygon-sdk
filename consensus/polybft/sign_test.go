@@ -19,8 +19,11 @@ func (t *testerAccount) Address() types.Address {
 	return types.Address(t.priv.Address())
 }
 
-func (t *testerAccount) sign(h *types.Header) *types.Header {
-	// h, _ = writeSeal(t.priv, h) TODO
+func (t *testerAccount) seal(hash []byte) []byte {
+	h, err := writeSeal(t.priv, hash, false)
+	if err != nil {
+		panic(err)
+	}
 	return h
 }
 

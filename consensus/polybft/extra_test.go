@@ -1,10 +1,13 @@
 package polybft
 
 import (
+	"crypto/rand"
 	"reflect"
 	"testing"
 
 	"github.com/0xPolygon/polygon-sdk/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/umbracle/go-web3"
 )
 
 func TestExtraEncoding(t *testing.T) {
@@ -41,5 +44,26 @@ func TestExtraEncoding(t *testing.T) {
 }
 
 func TestExtra_RlpFuzz(t *testing.T) {
+	// TODO: Use fastrlp
+}
 
+func TestExtra_Ecrecover(t *testing.T) {
+	pool := newTesterAccountPool()
+	pool.add("A")
+
+	var hash web3.Hash
+	rand.Read(hash[:])
+
+	// sign the hash
+	seal := pool.get("A").seal(hash[:])
+
+	header := &Header{
+		Hash: hash,
+		Extra: &Extra{
+			Seal: seal,
+		},
+	}
+	addr, err := header.Ecrecover()
+	assert.NoError(t, err)
+	assert.Equal(t, pool.get("A").Address(), addr)
 }
